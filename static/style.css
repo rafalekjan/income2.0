@@ -1,0 +1,382 @@
+:root {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --text: #1c2530;
+  --muted: #667085;
+  --border: #e2e6ea;
+  --accent: #2563eb;
+  --accent-soft: #eaf1ff;
+  --uop: #2563eb;
+  --b2b: #16a34a;
+  --danger: #dc2626;
+  --danger-soft: #fdecec;
+  --ok: #16a34a;
+  --radius: 10px;
+  --tint-0: #eaf1ff;
+  --tint-1: #eafbf1;
+  --tint-2: #fff4e0;
+  --tint-3: #f5ecff;
+  --tint-4: #ffe9ec;
+  --group-border: #b6bdc6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14181f;
+    --panel: #1c222b;
+    --text: #e6e9ee;
+    --muted: #9aa4b2;
+    --border: #2b323d;
+    --accent: #5b8def;
+    --accent-soft: #1f2c44;
+    --danger-soft: #3a1f22;
+    --tint-0: #1f2c44;
+    --tint-1: #163524;
+    --tint-2: #3a2f10;
+    --tint-3: #2a1f3d;
+    --tint-4: #3a1f27;
+    --group-border: #4a5361;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+header h1 {
+  font-size: 20px;
+  margin: 0;
+}
+
+nav {
+  display: flex;
+  gap: 6px;
+}
+
+nav button {
+  background: none;
+  border: none;
+  padding: 10px 20px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 500;
+  transition: background .15s ease, color .15s ease;
+}
+
+nav button:hover {
+  background: var(--bg);
+}
+
+nav button.active {
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+}
+
+main {
+  padding: 20px 24px 60px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.view { display: none; }
+.view.active { display: block; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.card h2, .card h3 {
+  margin-top: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.stat .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+.stat .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+.stat .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th, td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+
+tr.inactive-month td { opacity: .35; }
+
+input[type="number"], input[type="text"], input[type="date"], select {
+  width: 90px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+}
+
+input[type="text"] { width: 160px; }
+input[type="date"] { width: 140px; }
+
+/* Remove native number input spin buttons - accidental scroll/click was changing values */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Pola bez oczywistego zastosowania (praca jeszcze nie istniała / już się
+   skończyła) mają być wyraźnie widoczne jako mniej istotne - ale to TYLKO
+   wizualne wyszarzenie (nie `disabled`!), żeby zawsze dało się poprawić albo
+   wyczyścić wartość, nawet "widmową" z importu czy sprzed zmiany reguł. */
+input[type="number"].dim, input[type="text"].dim, input[type="date"].dim, select.dim {
+  background: var(--border);
+  color: var(--muted);
+  border-color: var(--border);
+  opacity: .7;
+}
+
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.field label { font-size: 12px; color: var(--muted); }
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+}
+
+button.btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+button.btn:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+.year-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.year-nav-select {
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+  text-align-last: center;
+  width: 130px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.year-nav-btn {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  font-size: 22px;
+  line-height: 1;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.year-nav-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.year-nav-btn:disabled {
+  opacity: .3;
+  cursor: not-allowed;
+}
+
+button.btn.secondary {
+  background: var(--panel);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+button.btn.danger {
+  background: var(--danger);
+}
+
+button.btn.small {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+/* Kwoty już wpisane - przycisk dalej działa, ale nie ma się co rzucać w oczy */
+button.btn.faded {
+  opacity: .35;
+}
+button.btn.faded:hover {
+  opacity: .8;
+}
+
+.warn-icon {
+  cursor: help;
+  font-size: 12px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge.uop { background: var(--accent-soft); color: var(--uop); }
+.badge.b2b { background: #e8f8ee; color: var(--b2b); }
+
+.job-card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.muted { color: var(--muted); font-size: 12px; }
+
+.chart-wrap {
+  position: relative;
+  height: 320px;
+}
+
+.chart-wrap-lg {
+  height: 480px;
+}
+
+@media (max-width: 800px) {
+  .chart-wrap-lg { height: 360px; }
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 800px) {
+  .two-col { grid-template-columns: 1fr; }
+  main { padding: 16px; }
+  table { display: block; overflow-x: auto; }
+}
+
+.warning-banner {
+  background: #fff7e6;
+  border: 1px solid #f0c36d;
+  color: #7a5b00;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .warning-banner { background: #3a2f10; border-color: #6b5518; color: #f0c36d; }
+}
+
+.arrears { color: var(--danger); font-weight: 600; }
+.ok-text { color: var(--ok); }
+
+/* Grupowanie kolumn per praca w tabeli Wpisów - żeby pola różnych
+   pracodawców się nie zlewały */
+.tint-0 { background: var(--tint-0); }
+.tint-1 { background: var(--tint-1); }
+.tint-2 { background: var(--tint-2); }
+.tint-3 { background: var(--tint-3); }
+.tint-4 { background: var(--tint-4); }
+.group-start { border-left: 2px solid var(--group-border); }
+.month-col { font-weight: 600; }
+
+#toast-container {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.12);
+  animation: toast-in .15s ease-out;
+}
+
+.toast.ok { border-color: var(--ok); color: var(--ok); }
+.toast.err { border-color: var(--danger); color: var(--danger); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}

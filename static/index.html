@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Income2 — dochody</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>💰 Income2</h1>
+    <nav>
+      <button data-tab="dashboard" class="active">Dashboard</button>
+      <button data-tab="entries">Dochody</button>
+      <button data-tab="settings">Ustawienia</button>
+    </nav>
+  </header>
+
+  <div id="toast-container"></div>
+
+  <main>
+    <section id="view-dashboard" class="view active"></section>
+    <section id="view-entries" class="view"></section>
+    <section id="view-settings" class="view"></section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
