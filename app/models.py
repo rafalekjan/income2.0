@@ -95,6 +95,17 @@ class Expense(Base):
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
+class ExpenseTransferCategory(Base):
+    """Nazwy pozycji z Wydatków, które są w rzeczywistości przelewami między
+    własnymi kontami (nie realnym wydatkiem) - ustawiane raz w Ustawieniach,
+    zamiast oznaczania każdego miesiąca z osobna. Wykluczone z sum
+    niezależnie od roku/miesiąca."""
+
+    __tablename__ = "expense_transfer_categories"
+
+    name: Mapped[str] = mapped_column(String(200), primary_key=True)
+
+
 class YearSettings(Base):
     __tablename__ = "year_settings"
 

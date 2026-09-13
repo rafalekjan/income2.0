@@ -12,6 +12,28 @@ def list_years(db: Session = Depends(get_db)):
     return crud.get_expense_years(db)
 
 
+@router.get("/names", response_model=list[str])
+def list_names(db: Session = Depends(get_db)):
+    return crud.get_distinct_expense_names(db)
+
+
+@router.get("/transfer-categories", response_model=list[str])
+def list_transfer_categories(db: Session = Depends(get_db)):
+    return crud.get_transfer_category_names(db)
+
+
+@router.post("/transfer-categories", response_model=list[str])
+def add_transfer_category(payload: schemas.TransferCategoryCreate, db: Session = Depends(get_db)):
+    crud.add_transfer_category(db, payload.name)
+    return crud.get_transfer_category_names(db)
+
+
+@router.delete("/transfer-categories/{name}", response_model=list[str])
+def remove_transfer_category(name: str, db: Session = Depends(get_db)):
+    crud.remove_transfer_category(db, name)
+    return crud.get_transfer_category_names(db)
+
+
 @router.get("", response_model=list[schemas.ExpenseOut])
 def list_expenses(year: int, month: int | None = None, db: Session = Depends(get_db)):
     return crud.get_expenses(db, year, month)

@@ -91,3 +91,10 @@ def run_migrations():
             conn.exec_driver_sql(
                 "ALTER TABLE year_settings ADD COLUMN pit_fixed_amount REAL NOT NULL DEFAULT 0.0"
             )
+
+        # Wykluczanie z sum przeniesione z pojedynczych wpisow (checkbox per
+        # miesiac) na globalna liste nazw-przelewow w Ustawieniach (patrz
+        # ExpenseTransferCategory) - stara kolumna nie jest juz potrzebna.
+        expenses_cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(expenses)").fetchall()]
+        if "excluded_from_total" in expenses_cols:
+            conn.exec_driver_sql("ALTER TABLE expenses DROP COLUMN excluded_from_total")

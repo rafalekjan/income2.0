@@ -225,6 +225,31 @@ def get_expense_years(db: Session) -> list[int]:
     return sorted(set(db.scalars(select(models.Expense.year))))
 
 
+def get_all_expenses(db: Session) -> list[models.Expense]:
+    return list(db.scalars(select(models.Expense)))
+
+
+def get_distinct_expense_names(db: Session) -> list[str]:
+    return sorted(set(db.scalars(select(models.Expense.name))))
+
+
+def get_transfer_category_names(db: Session) -> list[str]:
+    return sorted(db.scalars(select(models.ExpenseTransferCategory.name)))
+
+
+def add_transfer_category(db: Session, name: str) -> None:
+    if db.get(models.ExpenseTransferCategory, name) is None:
+        db.add(models.ExpenseTransferCategory(name=name))
+        db.commit()
+
+
+def remove_transfer_category(db: Session, name: str) -> None:
+    existing = db.get(models.ExpenseTransferCategory, name)
+    if existing is not None:
+        db.delete(existing)
+        db.commit()
+
+
 def get_expenses(db: Session, year: int, month: int | None = None) -> list[models.Expense]:
     stmt = select(models.Expense).where(models.Expense.year == year)
     if month is not None:
@@ -260,11 +285,18 @@ def delete_expense(db: Session, expense: models.Expense) -> None:
 
 def copy_expenses_from_previous_month(db: Session, year: int, month: int) -> list[models.Expense]:
     """Kopiuje pozycje z poprzedniego miesiąca (kwoty, bez odznaczania
-    "zapłacone" - zawsze startuje jako niezapłacone) do wskazanego miesiąca."""
+    "zapłacone" - zawsze startuje jako niezapłacone) do wskazanego miesiąca.
+
+    Pomija nazwy, które w docelowym miesiącu już istnieją - inaczej powstałyby
+    zduplikowane pozycje o tej samej nazwie w jednym miesiącu, co psuje widok
+    "jedna kolumna = jedna nazwa" w zakładce Wydatki."""
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     source = get_expenses(db, prev_year, prev_month)
+    existing_names = {e.name for e in get_expenses(db, year, month)}
     created = []
     for item in source:
+        if item.name in existing_names:
+            continue
         expense = models.Expense(year=year, month=month, name=item.name, amount=item.amount, paid=False)
         db.add(expense)
         created.append(expense)

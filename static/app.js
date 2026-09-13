@@ -8,7 +8,7 @@ const state = {
   b2bFeesByYear: {},
   extraYears: new Set(),
   expensesYear: new Date().getFullYear(),
-  expensesCollapsed: {},
+  expenseTransferCategories: [],
   charts: {},
 };
 
@@ -52,6 +52,38 @@ function monthActive(job, year, month) {
   return true;
 }
 
+function tintClass(idx) {
+  return `tint-${idx % 5}`;
+}
+
+// Wspólny widget wyboru roku (strzałki + rozwijana lista) używany przez
+// zakładki Dochody i Wydatki - identyczny wygląd i zachowanie w obu.
+function renderYearNav(idPrefix, years, currentYear) {
+  return `
+    <div class="year-nav">
+      <button type="button" class="year-nav-btn" id="${idPrefix}-year-down" title="Poprzedni rok z listy" ${years.indexOf(currentYear) <= 0 ? "disabled" : ""}>‹</button>
+      <select id="${idPrefix}-year" class="year-nav-select">
+        ${years.map((y) => `<option value="${y}" ${y === currentYear ? "selected" : ""}>${y}</option>`).join("")}
+      </select>
+      <button type="button" class="year-nav-btn" id="${idPrefix}-year-up" title="Kolejny rok z listy" ${years.indexOf(currentYear) >= years.length - 1 ? "disabled" : ""}>›</button>
+    </div>`;
+}
+
+function wireYearNav(idPrefix, years, getCurrentYear, setCurrentYear, onChange) {
+  document.getElementById(`${idPrefix}-year`).addEventListener("change", (e) => {
+    setCurrentYear(parseInt(e.target.value, 10));
+    onChange();
+  });
+  document.getElementById(`${idPrefix}-year-up`).addEventListener("click", () => {
+    const idx = years.indexOf(getCurrentYear());
+    if (idx < years.length - 1) { setCurrentYear(years[idx + 1]); onChange(); }
+  });
+  document.getElementById(`${idPrefix}-year-down`).addEventListener("click", () => {
+    const idx = years.indexOf(getCurrentYear());
+    if (idx > 0) { setCurrentYear(years[idx - 1]); onChange(); }
+  });
+}
+
 // Blokada zmiany wartości scrollem myszy nad polem liczbowym (samo ukrycie
 // strzałek w CSS nie wystarcza - w Chrome/Edge scroll nad aktywnym polem
 // number nadal zmienia wartość).
@@ -71,6 +103,9 @@ function initTabs() {
 function switchTab(tab) {
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${tab}`));
+  // Wydatki i Dochody maja szerokie tabele (wiele kolumn - praca/pozycja),
+  // wiec te zakladki dostaja szerszy kontener niz reszta aplikacji.
+  document.querySelector("main").classList.toggle("wide", tab === "expenses" || tab === "entries");
   // Zawsze wracaj do bieżącego roku przy wejściu na zakładkę - nie pamiętaj
   // ostatnio przeglądanego roku między przełączeniami.
   const now = new Date().getFullYear();
@@ -96,6 +131,7 @@ async function renderDashboard() {
   }
 
   const totalIncome = summary.reduce((s, y) => s + y.total_real_income, 0);
+  const totalExpenses = summary.reduce((s, y) => s + y.total_expenses, 0);
   const latest = summary[summary.length - 1];
   const totalArrears = summary.reduce((s, y) => s + y.unpaid_zus + y.unpaid_pit + y.unpaid_vat, 0);
 
@@ -105,10 +141,12 @@ async function renderDashboard() {
       <div class="stat"><div class="label">${latest.year} — suma roczna</div><div class="value">${fmtMoney(latest.total_real_income)}</div></div>
       <div class="stat"><div class="label">${latest.year} — średnia miesięczna</div><div class="value">${fmtMoney(latest.avg_monthly_income)}</div><div class="sub">na podstawie ${latest.months_with_data} wypełnionych mies.</div></div>
       <div class="stat"><div class="label">Niezapłacone opłaty B2B (razem)</div><div class="value ${totalArrears > 0 ? "arrears" : "ok-text"}">${fmtMoney(totalArrears)}</div></div>
+      <div class="stat"><div class="label">Wydatki — suma ze wszystkich lat</div><div class="value">${fmtMoney(totalExpenses)}</div></div>
+      <div class="stat"><div class="label">${latest.year} — wydatki</div><div class="value">${fmtMoney(latest.total_expenses)}</div></div>
     </div>
 
     <div class="card">
-      <h3>Dochód roczny i średnia miesięczna</h3>
+      <h3>Dochód i wydatki roczne (+ średnia miesięczna)</h3>
       <div class="chart-wrap chart-wrap-lg"><canvas id="chart-yearly"></canvas></div>
     </div>
     <div class="card">
@@ -119,11 +157,11 @@ async function renderDashboard() {
     <div class="card">
       <h3>Podsumowanie roczne</h3>
       <p class="muted">Dochód razem = UoP + przychód B2B + VAT należny (pobrany od klienta razem z fakturą) − ZUS − PIT − VAT faktycznie zapłacony do US.
-      Jeśli zapłacisz mniej VAT-u niż pobrałeś (np. dzięki odliczeniom z kosztów), różnica zwiększa dochód.</p>
+      Jeśli zapłacisz mniej VAT-u niż pobrałeś (np. dzięki odliczeniom z kosztów), różnica zwiększa dochód. Wydatki pochodzą z osobnej zakładki Wydatki i nie są odejmowane od dochodu na wykresach.</p>
       <table>
         <thead><tr>
           <th>Rok</th><th>Dochód razem</th><th>Śr. miesięczna</th><th>UoP</th><th>B2B przychód</th>
-          <th>ZUS</th><th>PIT</th><th>VAT</th><th>Zaległości</th>
+          <th>ZUS</th><th>PIT</th><th>VAT</th><th>Zaległości</th><th>Wydatki</th>
         </tr></thead>
         <tbody>
           ${summary.map((y) => {
@@ -138,6 +176,7 @@ async function renderDashboard() {
               <td>${fmtMoney(y.total_pit)}</td>
               <td>${fmtMoney(y.total_vat)}</td>
               <td class="${arrears > 0 ? "arrears" : ""}">${fmtMoney(arrears)}</td>
+              <td>${fmtMoney(y.total_expenses)}</td>
             </tr>`;
           }).join("")}
         </tbody>
@@ -166,6 +205,14 @@ function drawYearlyChart(summary) {
           tension: 0.25,
         },
         {
+          label: "Wydatki roczne",
+          data: summary.map((y) => y.total_expenses),
+          borderColor: "#dc2626",
+          backgroundColor: "transparent",
+          yAxisID: "y",
+          tension: 0.25,
+        },
+        {
           label: "Średnia miesięczna",
           data: summary.map((y) => y.avg_monthly_income),
           borderColor: "#16a34a",
@@ -180,7 +227,7 @@ function drawYearlyChart(summary) {
       responsive: true,
       maintainAspectRatio: false,
       scales: {
-        y: { position: "left", title: { display: true, text: "Dochód roczny (zł)" } },
+        y: { position: "left", title: { display: true, text: "Dochód / wydatki roczne (zł)" } },
         y1: {
           position: "right",
           title: { display: true, text: "Średnia miesięczna (zł)" },
@@ -203,6 +250,13 @@ function drawMonthlyChart(series) {
           label: "Dochód razem",
           data: series.map((p) => p.total_real_income),
           borderColor: "#2563eb",
+          backgroundColor: "transparent",
+          tension: 0.25,
+        },
+        {
+          label: "Wydatki",
+          data: series.map((p) => p.expenses_amount),
+          borderColor: "#dc2626",
           backgroundColor: "transparent",
           tension: 0.25,
         },
@@ -399,18 +453,10 @@ async function renderEntries() {
   const years = [...candidateYears].sort((a, b) => a - b);
 
   el.innerHTML = `
-    <div class="card">
-      <div class="year-nav">
-        <button type="button" class="year-nav-btn" id="entries-year-down" title="Poprzedni rok z listy" ${years.indexOf(state.entriesYear) <= 0 ? "disabled" : ""}>‹</button>
-        <select id="entries-year" class="year-nav-select">
-          ${years.map((y) => `<option value="${y}" ${y === state.entriesYear ? "selected" : ""}>${y}</option>`).join("")}
-        </select>
-        <button type="button" class="year-nav-btn" id="entries-year-up" title="Kolejny rok z listy" ${years.indexOf(state.entriesYear) >= years.length - 1 ? "disabled" : ""}>›</button>
-      </div>
-    </div>
+    <div class="card card-narrow">${renderYearNav("entries", years, state.entriesYear)}</div>
     <div id="entries-jobs"></div>
     <div id="entries-b2b-fees"></div>
-    <div class="card">
+    <div class="card card-narrow">
       <h3>Podsumowanie miesięczne — ${state.entriesYear}</h3>
       <p class="muted">UoP + przychód B2B + VAT należny, wg miesiąca pracy/wystawienia faktury (niezależnie kiedy wpłynął przelew),
       minus wspólne ZUS, PIT i VAT faktycznie zapłacony za ten sam miesiąc. Jeśli zapłacisz mniej VAT-u niż pobrałeś, różnica zwiększa dochód.</p>
@@ -421,18 +467,7 @@ async function renderEntries() {
     </div>
   `;
 
-  document.getElementById("entries-year").addEventListener("change", (e) => {
-    state.entriesYear = parseInt(e.target.value, 10);
-    renderEntries();
-  });
-  document.getElementById("entries-year-up").addEventListener("click", () => {
-    const idx = years.indexOf(state.entriesYear);
-    if (idx < years.length - 1) { state.entriesYear = years[idx + 1]; renderEntries(); }
-  });
-  document.getElementById("entries-year-down").addEventListener("click", () => {
-    const idx = years.indexOf(state.entriesYear);
-    if (idx > 0) { state.entriesYear = years[idx - 1]; renderEntries(); }
-  });
+  wireYearNav("entries", years, () => state.entriesYear, (y) => { state.entriesYear = y; }, renderEntries);
   await loadEntriesForYear(state.entriesYear);
 }
 
@@ -516,7 +551,6 @@ function renderEntriesJobs(year, byJob) {
   }
 
   const fieldCols = (job) => (job.type === "B2B" ? 4 : 1);
-  const tintClass = (idx) => `tint-${idx % 5}`;
 
   const groupHeaderRow = relevantJobs.map((job, idx) =>
     `<th colspan="${fieldCols(job)}" class="${tintClass(idx)} group-start">${job.name} <span class="badge ${job.type.toLowerCase()}">${job.type}</span></th>`
@@ -525,8 +559,11 @@ function renderEntriesJobs(year, byJob) {
   const fieldHeaderRow = relevantJobs.map((job, idx) => {
     const t = tintClass(idx);
     return job.type === "B2B"
-      ? `<th class="${t} group-start">Godziny</th><th class="${t}">Stawka/h</th><th class="${t}">Przychód netto</th><th class="${t}">Faktura</th>`
-      : `<th class="${t} group-start">Kwota netto</th>`;
+      ? `<th class="${t} group-start group-hours">Godziny</th>
+         <th class="${t} group-rate">Stawka/h</th>
+         <th class="${t} group-net">Przychód netto</th>
+         <th class="${t} group-invoiced">Faktura</th>`
+      : `<th class="${t} group-start group-uop">Kwota netto</th>`;
   }).join("");
 
   const toClear = [];
@@ -549,7 +586,7 @@ function renderEntriesJobs(year, byJob) {
       const t = tintClass(jobIdx);
 
       if (job.type !== "B2B") {
-        return `<td class="${t} group-start"><input type="number" step="0.01" class="f-net ${dim}" data-job="${job.id}" data-month="${month}"
+        return `<td class="${t} group-start group-uop"><input type="number" step="0.01" class="f-net ${dim}" data-job="${job.id}" data-month="${month}"
           id="net-${job.id}-${month}" value="${e.net_revenue || ""}" /></td>`;
       }
 
@@ -561,13 +598,13 @@ function renderEntriesJobs(year, byJob) {
       const netValue = e.net_revenue || (active && isFixed ? job.fixed_monthly_net : "") || "";
 
       return `
-        <td class="${t} group-start"><input type="number" step="0.01" class="f-hours ${hoursRateDim}" data-job="${job.id}" data-month="${month}"
+        <td class="${t} group-start group-hours"><input type="number" step="0.01" class="f-hours ${hoursRateDim}" data-job="${job.id}" data-month="${month}"
           id="hours-${job.id}-${month}" value="${e.hours ?? ""}" /></td>
-        <td class="${t}"><input type="number" step="0.01" class="f-rate ${hoursRateDim}" data-job="${job.id}" data-month="${month}"
+        <td class="${t} group-rate"><input type="number" step="0.01" class="f-rate ${hoursRateDim}" data-job="${job.id}" data-month="${month}"
           id="rate-${job.id}-${month}" value="${e.hourly_rate ?? (active && !isFixed ? job.default_hourly_rate : null) ?? ""}" /></td>
-        <td class="${t}"><input type="number" step="0.01" class="f-net ${dim}" data-job="${job.id}" data-month="${month}"
+        <td class="${t} group-net"><input type="number" step="0.01" class="f-net ${dim}" data-job="${job.id}" data-month="${month}"
           id="net-${job.id}-${month}" value="${netValue}" /></td>
-        <td class="${t}" style="text-align:center"><input type="checkbox" class="f-invoiced ${dim}" data-job="${job.id}" data-month="${month}"
+        <td class="${t} group-invoiced" style="text-align:center"><input type="checkbox" class="f-invoiced ${dim}" data-job="${job.id}" data-month="${month}"
           id="invoiced-${job.id}-${month}" ${e.invoiced ? "checked" : ""} title="Faktura wystawiona" /></td>`;
     }).join("");
 
@@ -579,14 +616,16 @@ function renderEntriesJobs(year, byJob) {
   container.innerHTML = `
     <div class="card">
       <h3>Wpisy miesięczne — ${year}</h3>
-      <table>
-        <thead>
-          <tr><th></th>${groupHeaderRow}</tr>
-          <tr><th>Miesiąc</th>${fieldHeaderRow}</tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <p class="muted">Każda praca ma swój kolor tła i wyraźną kreskę oddzielającą jej kolumny.
+      <div class="table-scroll">
+        <table class="entries-table">
+          <thead>
+            <tr><th class="month-col"></th>${groupHeaderRow}</tr>
+            <tr><th class="month-col">Miesiąc</th>${fieldHeaderRow}</tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <p class="muted">Każda praca ma swój kolor tła i wyraźną kreskę oddzielającą jej kolumny. Kolumny są domyślnie wąskie — najedź, żeby się rozszerzyły.
       Zmiana stawki/h nadpisuje ją automatycznie we wszystkich kolejnych miesiącach danej pracy (wcześniejsze zostają bez zmian).
       Tylko miesiące z zaznaczoną fakturą liczą się do sum i wykresów.</p>
     </div>`;
@@ -635,13 +674,13 @@ function renderB2BFeesCard(year, byMonth) {
 
     return `<tr id="fee-row-${month}" data-month="${month}" class="${active ? "" : "inactive-month"}">
       <td class="month-col">${name}</td>
-      <td class="tint-0 group-start"><input type="number" step="0.01" class="ff-zus ${dim}" value="${zus || ""}" /></td>
-      <td class="tint-0" style="text-align:center"><input type="checkbox" class="ff-zus-paid ${dim}" ${zusPaid ? "checked" : ""} /></td>
-      <td class="tint-1 group-start"><input type="number" step="0.01" class="ff-pit ${dim}" value="${pit || ""}" /></td>
-      <td class="tint-1" style="text-align:center"><input type="checkbox" class="ff-pit-paid ${dim}" ${pitPaid ? "checked" : ""} /></td>
-      <td class="tint-2 group-start"><input type="number" step="0.01" class="ff-vat ${dim}" value="${vat || ""}" /></td>
-      <td class="tint-2" style="text-align:center"><input type="checkbox" class="ff-vat-paid ${dim}" ${vatPaid ? "checked" : ""} /></td>
-      <td><button class="btn small secondary${dim || (zus || pit || vat) ? " faded" : ""}" onclick="recalcFeeRow(${year}, ${month})">Przelicz</button></td>
+      <td class="tint-0 group-start fee-amount"><input type="number" step="0.01" class="ff-zus ${dim}" value="${zus || ""}" /></td>
+      <td class="tint-0 fee-paid"><input type="checkbox" class="ff-zus-paid ${dim}" ${zusPaid ? "checked" : ""} /></td>
+      <td class="tint-1 group-start fee-amount"><input type="number" step="0.01" class="ff-pit ${dim}" value="${pit || ""}" /></td>
+      <td class="tint-1 fee-paid"><input type="checkbox" class="ff-pit-paid ${dim}" ${pitPaid ? "checked" : ""} /></td>
+      <td class="tint-2 group-start fee-amount"><input type="number" step="0.01" class="ff-vat ${dim}" value="${vat || ""}" /></td>
+      <td class="tint-2 fee-paid"><input type="checkbox" class="ff-vat-paid ${dim}" ${vatPaid ? "checked" : ""} /></td>
+      <td class="fee-action"><button class="btn small secondary${dim || (zus || pit || vat) ? " faded" : ""}" onclick="recalcFeeRow(${year}, ${month})">Przelicz</button></td>
     </tr>`;
   }).join("");
 
@@ -651,15 +690,15 @@ function renderB2BFeesCard(year, byMonth) {
       <p class="muted">Jedna wspólna kwota miesięcznie, tak jak rozlicza księgowa — niezależnie od liczby umów B2B.
       Wiersz dotyczy tego samego miesiąca co praca/faktura (np. "Wrzesień" = opłaty za wrzesień) - bez żadnego przesunięcia.
       "Przelicz" policzy kwoty na bazie zafakturowanej sprzedaży z danego miesiąca.</p>
-      <table>
+      <table class="fees-table">
         <thead>
-          <tr><th></th><th colspan="2" class="tint-0 group-start">ZUS</th><th colspan="2" class="tint-1 group-start">PIT</th><th colspan="2" class="tint-2 group-start">VAT</th><th></th></tr>
+          <tr><th class="month-col"></th><th colspan="2" class="tint-0 group-start">ZUS</th><th colspan="2" class="tint-1 group-start">PIT</th><th colspan="2" class="tint-2 group-start">VAT</th><th></th></tr>
           <tr>
-            <th>Miesiąc</th>
-            <th class="tint-0 group-start">Kwota</th><th class="tint-0">Zapłacone</th>
-            <th class="tint-1 group-start">Kwota</th><th class="tint-1">Zapłacone</th>
-            <th class="tint-2 group-start">Kwota</th><th class="tint-2">Zapłacone</th>
-            <th></th>
+            <th class="month-col">Miesiąc</th>
+            <th class="tint-0 group-start fee-amount">Kwota</th><th class="tint-0 fee-paid">Zapłacone</th>
+            <th class="tint-1 group-start fee-amount">Kwota</th><th class="tint-1 fee-paid">Zapłacone</th>
+            <th class="tint-2 group-start fee-amount">Kwota</th><th class="tint-2 fee-paid">Zapłacone</th>
+            <th class="fee-action"></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -805,7 +844,11 @@ function escapeAttr(s) {
 
 async function renderExpenses() {
   const el = document.getElementById("view-expenses");
-  const existingYears = await api("/api/expenses/years");
+  const [existingYears, transferCategories] = await Promise.all([
+    api("/api/expenses/years"),
+    api("/api/expenses/transfer-categories"),
+  ]);
+  state.expenseTransferCategories = transferCategories;
 
   const candidateYears = new Set(existingYears);
   const now = new Date().getFullYear();
@@ -815,17 +858,9 @@ async function renderExpenses() {
   const years = [...candidateYears].sort((a, b) => a - b);
 
   el.innerHTML = `
-    <div class="card">
-      <div class="year-nav">
-        <button type="button" class="year-nav-btn" id="expenses-year-down" title="Poprzedni rok z listy" ${years.indexOf(state.expensesYear) <= 0 ? "disabled" : ""}>‹</button>
-        <select id="expenses-year" class="year-nav-select">
-          ${years.map((y) => `<option value="${y}" ${y === state.expensesYear ? "selected" : ""}>${y}</option>`).join("")}
-        </select>
-        <button type="button" class="year-nav-btn" id="expenses-year-up" title="Kolejny rok z listy" ${years.indexOf(state.expensesYear) >= years.length - 1 ? "disabled" : ""}>›</button>
-      </div>
-    </div>
+    <div class="card card-narrow">${renderYearNav("expenses", years, state.expensesYear)}</div>
     <div id="expenses-months"></div>
-    <div class="card">
+    <div class="card card-narrow">
       <h3>Podsumowanie miesięczne — ${state.expensesYear}</h3>
       <table>
         <thead><tr><th>Miesiąc</th><th>Suma wydatków</th></tr></thead>
@@ -834,19 +869,7 @@ async function renderExpenses() {
     </div>
   `;
 
-  document.getElementById("expenses-year").addEventListener("change", (e) => {
-    state.expensesYear = parseInt(e.target.value, 10);
-    renderExpenses();
-  });
-  document.getElementById("expenses-year-up").addEventListener("click", () => {
-    const idx = years.indexOf(state.expensesYear);
-    if (idx < years.length - 1) { state.expensesYear = years[idx + 1]; renderExpenses(); }
-  });
-  document.getElementById("expenses-year-down").addEventListener("click", () => {
-    const idx = years.indexOf(state.expensesYear);
-    if (idx > 0) { state.expensesYear = years[idx - 1]; renderExpenses(); }
-  });
-
+  wireYearNav("expenses", years, () => state.expensesYear, (y) => { state.expensesYear = y; }, renderExpenses);
   await loadExpensesForYear(state.expensesYear);
 }
 
@@ -861,16 +884,21 @@ async function loadExpensesForYear(year) {
   updateExpensesSummary(year);
 }
 
+function isTransferCategory(name) {
+  return state.expenseTransferCategories.includes(name);
+}
+
 function monthExpenseSum(items) {
-  return items.reduce((a, it) => a + (it.amount || 0), 0);
+  return items.reduce((a, it) => a + (isTransferCategory(it.name) ? 0 : (it.amount || 0)), 0);
 }
 
 // Aktualny miesiac zawsze na gorze, pod nim wstecz poprzednie (grudzien
 // przechodzi w listopad itd.). Miesiace z przyszlosci (dla biezacego roku)
-// ida na sam dol, w kolejnosci chronologicznej, domyslnie zwiniete.
+// ida na sam dol, tylko przygaszone wizualnie (jak nieaktywne miesiace we
+// Wpisach) - tabela jest kompaktowa, wiec zwijanie nie jest tu potrzebne.
 function expenseMonthOrder(year) {
   const now = new Date();
-  const curKey = now.getFullYear() * 12 + now.getMonth(); // getMonth() jest 0-based, wiec to juz "rok*12+miesiac-1"
+  const curKey = now.getFullYear() * 12 + now.getMonth();
   const past = [];
   const future = [];
   for (let m = 1; m <= 12; m++) {
@@ -879,70 +907,99 @@ function expenseMonthOrder(year) {
   }
   past.sort((a, b) => b - a);
   future.sort((a, b) => a - b);
-  return { past, future, curKey };
+  return { past, future };
 }
 
-function isFutureMonth(year, month, curKey) {
-  return year * 12 + (month - 1) > curKey;
+// Kolejnosc kolumn wg pierwszego wystapienia danej nazwy w roku (styczen ->
+// grudzien), zeby kolumny nie "skakaly" miejscami przy przeladowaniu.
+function expenseNamesForYear(byMonth) {
+  const names = [];
+  for (let m = 1; m <= 12; m++) {
+    (byMonth[m] || []).forEach((it) => { if (!names.includes(it.name)) names.push(it.name); });
+  }
+  return names;
 }
 
 function renderExpenseMonths(year, byMonth) {
   const container = document.getElementById("expenses-months");
-  const { past, future, curKey } = expenseMonthOrder(year);
+  const { past, future } = expenseMonthOrder(year);
   const order = [...past, ...future];
+  const names = expenseNamesForYear(byMonth);
 
-  container.innerHTML = order.map((month) => {
-    const name = MONTHS[month - 1];
-    const items = byMonth[month] || [];
-    const key = `${year}-${month}`;
-    const defaultCollapsed = isFutureMonth(year, month, curKey);
-    const collapsed = state.expensesCollapsed[key] ?? defaultCollapsed;
-
-    const rows = items.map((it) => `
-      <tr data-id="${it.id}">
-        <td><input type="text" class="exp-name" value="${escapeAttr(it.name)}" /></td>
-        <td><input type="number" step="0.01" class="exp-amount" value="${it.amount || ""}" /></td>
-        <td style="text-align:center"><input type="checkbox" class="exp-paid" ${it.paid ? "checked" : ""} /></td>
-        <td><button type="button" class="btn small danger" data-action="delete-expense" data-id="${it.id}">Usuń</button></td>
-      </tr>`).join("");
-
-    return `
+  if (names.length === 0) {
+    container.innerHTML = `
       <div class="card">
-        <div class="expense-month-header">
-          <button type="button" class="expense-collapse-btn" data-action="toggle-month" data-month="${month}">
-            <span class="chevron">${collapsed ? "▸" : "▾"}</span> ${name}
-          </button>
-          <span class="expense-month-sum-badge" id="expense-header-sum-${month}">${fmtMoney(monthExpenseSum(items))}</span>
-          <button type="button" class="btn small secondary" data-action="copy-month" data-month="${month}">Kopiuj z poprzedniego miesiąca</button>
-        </div>
-        <table id="expense-table-${month}" ${collapsed ? "hidden" : ""}>
-          <thead><tr><th>Nazwa</th><th>Kwota</th><th>Zapłacone</th><th></th></tr></thead>
-          <tbody id="expense-tbody-${month}">
-            ${rows}
-            <tr class="expense-add-row">
-              <td><input type="text" class="exp-new-name" placeholder="Nowy wydatek" /></td>
-              <td><input type="number" step="0.01" class="exp-new-amount" placeholder="0.00" /></td>
-              <td></td>
-              <td><button type="button" class="btn small" data-action="add-expense" data-month="${month}">+ Dodaj</button></td>
-            </tr>
-          </tbody>
-          <tfoot><tr><td><b>Suma</b></td><td><b id="expense-sum-${month}">${fmtMoney(monthExpenseSum(items))}</b></td><td colspan="2"></td></tr></tfoot>
-        </table>
+        <p class="muted">Brak jeszcze żadnych wydatków w ${year} r.</p>
+        <button type="button" class="btn" id="expense-add-col-btn">+ Dodaj pierwszą pozycję</button>
       </div>`;
-  }).join("");
-}
+    document.getElementById("expense-add-col-btn").addEventListener("click", addExpenseCategoryColumn);
+  } else {
+    const headerRow = names.map((name, idx) => {
+      const isTransfer = isTransferCategory(name);
+      return `<th class="${tintClass(idx)} group-start cat-col hover-col ${isTransfer ? "is-transfer-col" : ""}" data-col="${idx}" title="${isTransfer ? "Przelew między własnymi kontami - wyłączone z sum (zarządzaj w Ustawieniach)" : ""}">${escapeAttr(name)}</th>`;
+    }).join("");
 
-function toggleExpenseMonth(year, month) {
-  const key = `${year}-${month}`;
-  const { curKey } = expenseMonthOrder(year);
-  const defaultCollapsed = isFutureMonth(year, month, curKey);
-  const currentlyCollapsed = state.expensesCollapsed[key] ?? defaultCollapsed;
-  const newCollapsed = !currentlyCollapsed;
-  state.expensesCollapsed[key] = newCollapsed;
-  const table = document.getElementById(`expense-table-${month}`);
-  const chevron = document.querySelector(`.expense-collapse-btn[data-month="${month}"] .chevron`);
-  if (table) table.hidden = newCollapsed;
-  if (chevron) chevron.textContent = newCollapsed ? "▸" : "▾";
+    const rows = order.map((month) => {
+      const items = byMonth[month] || [];
+      const isFuture = future.includes(month);
+      const cells = names.map((name, idx) => {
+        const t = tintClass(idx);
+        const item = items.find((it) => it.name === name);
+        const amount = item ? item.amount : null;
+        const paid = item ? item.paid : false;
+        const excluded = isTransferCategory(name);
+        const id = item ? item.id : "";
+        return `
+          <td class="${t} group-start cat-col hover-col" data-col="${idx}">
+            <div class="expense-cell ${paid ? "is-paid" : ""} ${excluded ? "is-excluded" : ""}">
+              <input type="number" step="0.01" class="exp-amount" data-name="${escapeAttr(name)}" data-month="${month}" data-id="${id}" value="${amount || ""}" />
+              <input type="checkbox" class="exp-paid" data-name="${escapeAttr(name)}" data-month="${month}" data-id="${id}" title="Zapłacone" ${paid ? "checked" : ""} />
+              ${item ? `<button type="button" class="expense-cell-del" data-action="delete-from-month" data-name="${escapeAttr(name)}" data-month="${month}" title="Zakończ „${escapeAttr(name)}” od tego miesiąca (usuwa ten i kolejne miesiące, wcześniejsze zostają)">✕</button>` : ""}
+            </div>
+          </td>`;
+      }).join("");
+
+      return `<tr class="${isFuture ? "inactive-month" : ""}">
+        <td class="month-col">${MONTHS[month - 1]}</td>
+        ${cells}
+        <td class="cat-col-add"></td>
+      </tr>`;
+    }).join("");
+
+    container.innerHTML = `
+      <div class="card">
+        <h3>Wydatki miesięczne — ${year}</h3>
+        <div class="expense-copy-row">
+          <label class="muted" for="expense-copy-month">Uzupełnij brakujące pozycje w</label>
+          <select id="expense-copy-month">
+            ${order.map((m) => `<option value="${m}">${MONTHS[m - 1]}</option>`).join("")}
+          </select>
+          <button type="button" class="btn small secondary" id="expense-copy-btn">z poprzedniego miesiąca</button>
+        </div>
+        <div class="table-scroll">
+          <table class="expense-table">
+            <thead>
+              <tr>
+                <th class="month-col">Miesiąc</th>${headerRow}
+                <th class="cat-col-add"><button type="button" class="expense-add-col-btn" id="expense-add-col-btn" title="Dodaj nową pozycję">+</button></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <p class="muted">Każda pozycja ma swoją kolumnę (kwota + checkbox „zapłacone") — łatwo porównać kwotę z poprzednim miesiącem, patrząc w dół kolumny.
+        Wpisanie kwoty w pustej komórce dodaje nową pozycję na ten miesiąc; wyczyszczenie kwoty (przy odznaczonym „zapłacone”) ją usuwa.
+        „✕” przy wypełnionej komórce kończy tę pozycję od tego miesiąca (usuwa ten i wszystkie kolejne miesiące w tym roku, wcześniejsze zostają bez zmian).
+        „+” na końcu dodaje nową pozycję (kolumnę). Nazwy z przerywanym podkreśleniem to przelewy między własnymi kontami
+        (widoczne, wyszarzone kursywą, wyłączone z sum) — zarządzaj listą w Ustawieniach.</p>
+      </div>`;
+
+    document.getElementById("expense-add-col-btn").addEventListener("click", addExpenseCategoryColumn);
+    document.getElementById("expense-copy-btn").addEventListener("click", () => {
+      const month = parseInt(document.getElementById("expense-copy-month").value, 10);
+      copyExpenseMonth(month);
+    });
+  }
 }
 
 function updateExpensesSummary(year) {
@@ -956,71 +1013,80 @@ function updateExpensesSummary(year) {
 
 document.addEventListener("change", (ev) => {
   if (!ev.target.closest("#expenses-months")) return;
-  if (!(ev.target.classList.contains("exp-name") || ev.target.classList.contains("exp-amount") || ev.target.classList.contains("exp-paid"))) return;
-  const tr = ev.target.closest("tr[data-id]");
-  if (!tr) return;
-  saveExpenseRow(parseInt(tr.dataset.id, 10));
+  if (!(ev.target.classList.contains("exp-amount") || ev.target.classList.contains("exp-paid"))) return;
+  const cell = ev.target.closest(".expense-cell");
+  if (!cell) return;
+  const amountInput = cell.querySelector(".exp-amount");
+  const paidInput = cell.querySelector(".exp-paid");
+  const month = parseInt(ev.target.dataset.month, 10);
+  const name = ev.target.dataset.name;
+  const id = ev.target.dataset.id ? parseInt(ev.target.dataset.id, 10) : null;
+  const amount = parseFloat(amountInput.value) || 0;
+  const paid = paidInput.checked;
+  saveExpenseCell(state.expensesYear, month, name, id, amount, paid);
 });
 
 document.addEventListener("click", (ev) => {
-  const toggleBtn = ev.target.closest('[data-action="toggle-month"]');
-  if (toggleBtn && toggleBtn.closest("#expenses-months")) {
-    toggleExpenseMonth(state.expensesYear, parseInt(toggleBtn.dataset.month, 10));
-    return;
-  }
-  const addBtn = ev.target.closest('[data-action="add-expense"]');
-  if (addBtn && addBtn.closest("#expenses-months")) {
-    addExpense(parseInt(addBtn.dataset.month, 10));
-    return;
-  }
-  const delBtn = ev.target.closest('[data-action="delete-expense"]');
+  const delBtn = ev.target.closest('[data-action="delete-from-month"]');
   if (delBtn && delBtn.closest("#expenses-months")) {
-    deleteExpense(parseInt(delBtn.dataset.id, 10));
-    return;
-  }
-  const copyBtn = ev.target.closest('[data-action="copy-month"]');
-  if (copyBtn && copyBtn.closest("#expenses-months")) {
-    copyExpenseMonth(parseInt(copyBtn.dataset.month, 10));
+    deleteExpenseFromMonth(state.expensesYear, parseInt(delBtn.dataset.month, 10), delBtn.dataset.name);
   }
 });
 
-async function saveExpenseRow(id) {
-  const tr = document.querySelector(`#expenses-months tr[data-id="${id}"]`);
-  if (!tr) return;
-  const payload = {
-    name: tr.querySelector(".exp-name").value.trim(),
-    amount: parseFloat(tr.querySelector(".exp-amount").value) || 0,
-    paid: tr.querySelector(".exp-paid").checked,
-  };
+// Wspolny mechanizm dla Wydatkow (".cat-col") i Wpisow (".group-*") -
+// kolumny sa domyslnie waskie, a po najechaniu na dowolna komorke danej
+// kolumny/grupy cala ona (naglowek + wszystkie miesiace) sie rozszerza.
+// Dziala dla dowolnej tabeli z komorkami oznaczonymi klasa "hover-col" i
+// atrybutem data-col (stan najechania trzymany per-tabela w dataset).
+document.addEventListener("mouseover", (ev) => {
+  const cell = ev.target.closest(".hover-col");
+  if (!cell) return;
+  const table = cell.closest("table");
+  const col = cell.dataset.col;
+  if (table.dataset.hoverCol === col) return;
+  table.querySelectorAll(".hover-col.col-hover").forEach((c) => c.classList.remove("col-hover"));
+  table.querySelectorAll(`.hover-col[data-col="${col}"]`).forEach((c) => c.classList.add("col-hover"));
+  table.dataset.hoverCol = col;
+});
+
+document.addEventListener("mouseout", (ev) => {
+  const table = ev.target.closest("table");
+  if (!table || !table.dataset.hoverCol) return;
+  if (ev.relatedTarget && table.contains(ev.relatedTarget)) return;
+  table.querySelectorAll(".hover-col.col-hover").forEach((c) => c.classList.remove("col-hover"));
+  delete table.dataset.hoverCol;
+});
+
+async function saveExpenseCell(year, month, name, id, amount, paid) {
   try {
-    const saved = await api(`/api/expenses/${id}`, { method: "PUT", body: JSON.stringify(payload) });
-    const year = state.expensesYear;
-    const list = state.expensesByYear[year][saved.month];
-    const i = list.findIndex((it) => it.id === id);
-    if (i >= 0) list[i] = saved;
-    const sum = monthExpenseSum(list);
-    const sumEl = document.getElementById(`expense-sum-${saved.month}`);
-    if (sumEl) sumEl.textContent = fmtMoney(sum);
-    const badgeEl = document.getElementById(`expense-header-sum-${saved.month}`);
-    if (badgeEl) badgeEl.textContent = fmtMoney(sum);
-    updateExpensesSummary(year);
-    showToast("Zapisano ✓", "ok");
+    if (!id) {
+      if (amount === 0 && !paid) return; // pusta komorka - nic do zrobienia
+      await api("/api/expenses", { method: "POST", body: JSON.stringify({ year, month, name, amount, paid }) });
+      showToast("Zapisano ✓", "ok");
+    } else if (amount === 0 && !paid) {
+      await api(`/api/expenses/${id}`, { method: "DELETE" });
+      showToast("Usunięto", "ok");
+    } else {
+      await api(`/api/expenses/${id}`, { method: "PUT", body: JSON.stringify({ amount, paid }) });
+      showToast("Zapisano ✓", "ok");
+    }
+    await loadExpensesForYear(year);
   } catch (err) {
     showToast("Błąd zapisu", "err");
   }
 }
 
-async function addExpense(month) {
+async function addExpenseCategoryColumn() {
+  const name = prompt("Nazwa nowej pozycji (np. Ubezpieczenie auta):");
+  if (!name || !name.trim()) return;
   const year = state.expensesYear;
-  const tbody = document.getElementById(`expense-tbody-${month}`);
-  const name = tbody.querySelector(".exp-new-name").value.trim();
-  if (!name) { showToast("Podaj nazwę wydatku", "err"); return; }
-  const amount = parseFloat(tbody.querySelector(".exp-new-amount").value) || 0;
+  const now = new Date();
+  // Nowa pozycja startuje od biezacego miesiaca (jesli przegladamy biezacy
+  // rok) albo od stycznia (dla innych lat) - amount=0, do uzupelnienia w
+  // komorce.
+  const month = year === now.getFullYear() ? now.getMonth() + 1 : 1;
   try {
-    await api("/api/expenses", {
-      method: "POST",
-      body: JSON.stringify({ year, month, name, amount, paid: false }),
-    });
+    await api("/api/expenses", { method: "POST", body: JSON.stringify({ year, month, name: name.trim(), amount: 0, paid: false }) });
     showToast("Dodano ✓", "ok");
     await loadExpensesForYear(year);
   } catch (err) {
@@ -1028,11 +1094,23 @@ async function addExpense(month) {
   }
 }
 
-async function deleteExpense(id) {
-  const year = state.expensesYear;
+// Konczy pozycje "name" od podanego miesiaca (usuwa TEN i kazdy PoZNIEJSZY
+// (chronologicznie) miesiac w danym roku - wczesniejsze miesiace zostaja
+// nietkniete). To odpowiednik ustawienia daty zakonczenia dla pracy.
+async function deleteExpenseFromMonth(year, fromMonth, name) {
+  const byMonth = state.expensesByYear[year] || {};
+  const ids = [];
+  for (let m = fromMonth; m <= 12; m++) (byMonth[m] || []).forEach((it) => { if (it.name === name) ids.push(it.id); });
+  if (ids.length === 0) return;
+  const monthsAffected = ids.length;
+  const confirmed = confirm(
+    `Zakończyć „${name}” od miesiąca ${MONTHS[fromMonth - 1]} ${year}?\n\n` +
+    `Usunie to ${monthsAffected} poz. (ten i kolejne miesiące). Wcześniejsze miesiące zostaną bez zmian.`
+  );
+  if (!confirmed) return;
   try {
-    await api(`/api/expenses/${id}`, { method: "DELETE" });
-    showToast("Usunięto", "ok");
+    await Promise.all(ids.map((id) => api(`/api/expenses/${id}`, { method: "DELETE" })));
+    showToast(`Zakończono „${name}” od ${MONTHS[fromMonth - 1]} (usunięto ${monthsAffected} poz.)`, "ok");
     await loadExpensesForYear(year);
   } catch (err) {
     showToast("Błąd usuwania", "err");
@@ -1047,7 +1125,7 @@ async function copyExpenseMonth(month) {
       body: JSON.stringify({ year, month }),
     });
     if (created.length === 0) {
-      showToast("Poprzedni miesiąc jest pusty", "err");
+      showToast("Brak nowych pozycji do skopiowania", "err");
       return;
     }
     showToast(`Skopiowano ${created.length} pozycji`, "ok");
@@ -1060,10 +1138,80 @@ async function copyExpenseMonth(month) {
 // ---------- Settings ----------
 async function renderSettings() {
   const el = document.getElementById("view-settings");
-  el.innerHTML = `<div id="settings-jobs-section"></div><div id="settings-rates-section"></div>`;
+  el.innerHTML = `<div id="settings-jobs-section"></div><div id="settings-transfers-section"></div><div id="settings-rates-section"></div>`;
   await renderJobs();
+  await renderTransferCategoriesSection();
   await renderRatesSection();
 }
+
+async function renderTransferCategoriesSection() {
+  const el = document.getElementById("settings-transfers-section");
+  const [names, transferCategories] = await Promise.all([
+    api("/api/expenses/names"),
+    api("/api/expenses/transfer-categories"),
+  ]);
+  const available = names.filter((n) => !transferCategories.includes(n));
+
+  el.innerHTML = `
+    <div class="card">
+      <h2>Przelewy między kontami</h2>
+      <p class="muted">Wybierz z listy nazwę pozycji z Wydatków, która w rzeczywistości jest przelewem między Twoimi własnymi kontami
+      (nie realnym wydatkiem). Kwota zostanie widoczna w tabeli Wydatków, ale wyłączona z sum — dla wszystkich miesięcy i lat naraz.</p>
+      <div class="form-row">
+        <div class="field">
+          <label>Nazwa pozycji</label>
+          <select id="transfer-category-select">
+            ${available.length === 0
+              ? `<option value="">(brak dostępnych pozycji)</option>`
+              : available.map((n) => `<option value="${escapeAttr(n)}">${escapeAttr(n)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <button type="button" class="btn" id="transfer-category-add-btn" ${available.length === 0 ? "disabled" : ""}>+ Dodaj</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Nazwa</th><th></th></tr></thead>
+        <tbody>
+          ${transferCategories.length === 0
+            ? `<tr><td colspan="2" class="muted">Brak oznaczonych pozycji.</td></tr>`
+            : transferCategories.map((n) => `
+              <tr>
+                <td>${escapeAttr(n)}</td>
+                <td><button type="button" class="btn small danger" data-action="remove-transfer-category" data-name="${escapeAttr(n)}">Usuń</button></td>
+              </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+
+  const addBtn = document.getElementById("transfer-category-add-btn");
+  if (addBtn) {
+    addBtn.addEventListener("click", async () => {
+      const select = document.getElementById("transfer-category-select");
+      const name = select.value;
+      if (!name) return;
+      try {
+        await api("/api/expenses/transfer-categories", { method: "POST", body: JSON.stringify({ name }) });
+        showToast("Dodano ✓", "ok");
+        renderTransferCategoriesSection();
+      } catch (err) {
+        showToast("Błąd zapisu", "err");
+      }
+    });
+  }
+}
+
+document.addEventListener("click", (ev) => {
+  const btn = ev.target.closest('[data-action="remove-transfer-category"]');
+  if (!btn) return;
+  const name = btn.dataset.name;
+  api(`/api/expenses/transfer-categories/${encodeURIComponent(name)}`, { method: "DELETE" })
+    .then(() => {
+      showToast("Usunięto", "ok");
+      renderTransferCategoriesSection();
+    })
+    .catch(() => showToast("Błąd usuwania", "err"));
+});
 
 async function renderRatesSection() {
   const el = document.getElementById("settings-rates-section");

@@ -147,6 +147,10 @@ class ExpenseOut(BaseModel):
     notes: str | None
 
 
+class TransferCategoryCreate(BaseModel):
+    name: str
+
+
 class CopyMonthRequest(BaseModel):
     year: int
     month: int
@@ -172,6 +176,7 @@ class YearSummary(BaseModel):
     unpaid_zus: float
     unpaid_pit: float
     unpaid_vat: float
+    total_expenses: float
     by_job: list[JobYearBreakdown]
 
 
@@ -184,3 +189,4 @@ class MonthPoint(BaseModel):
     zus_amount: float
     pit_amount: float
     vat_amount: float
+    expenses_amount: float

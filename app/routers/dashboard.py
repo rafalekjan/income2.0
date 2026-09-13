@@ -45,12 +45,33 @@ def _monthly_totals(db: Session):
     return totals, jobs
 
 
+def _yearly_expenses(db: Session) -> dict[int, float]:
+    transfer_names = set(crud.get_transfer_category_names(db))
+    totals: dict[int, float] = defaultdict(float)
+    for e in crud.get_all_expenses(db):
+        if e.name in transfer_names:
+            continue
+        totals[e.year] += e.amount
+    return totals
+
+
+def _monthly_expenses(db: Session) -> dict[tuple[int, int], float]:
+    transfer_names = set(crud.get_transfer_category_names(db))
+    totals: dict[tuple[int, int], float] = defaultdict(float)
+    for e in crud.get_all_expenses(db):
+        if e.name in transfer_names:
+            continue
+        totals[(e.year, e.month)] += e.amount
+    return totals
+
+
 @router.get("/summary", response_model=list[schemas.YearSummary])
 def summary(db: Session = Depends(get_db)):
     totals, jobs = _monthly_totals(db)
     fees = {(f.year, f.month): f for f in crud.get_all_b2b_fees(db)}
+    expenses_by_year = _yearly_expenses(db)
 
-    years = sorted({y for (y, _m) in totals} | {y for (y, _m) in fees})
+    years = sorted({y for (y, _m) in totals} | {y for (y, _m) in fees} | set(expenses_by_year))
     result = []
     for year in years:
         months_with_data = {m for (y, m) in totals if y == year}
@@ -114,6 +135,7 @@ def summary(db: Session = Depends(get_db)):
                 unpaid_zus=round(unpaid_zus, 2),
                 unpaid_pit=round(unpaid_pit, 2),
                 unpaid_vat=round(unpaid_vat, 2),
+                total_expenses=round(expenses_by_year.get(year, 0.0), 2),
                 by_job=by_job,
             )
         )
@@ -125,11 +147,12 @@ def summary(db: Session = Depends(get_db)):
 def monthly_series(db: Session = Depends(get_db)):
     totals, _jobs = _monthly_totals(db)
     fees = {(f.year, f.month): f for f in crud.get_all_b2b_fees(db)}
+    expenses_by_month = _monthly_expenses(db)
 
-    keys = sorted(totals)
+    keys = sorted(set(totals) | set(expenses_by_month))
     points = []
     for year, month in keys:
-        t = totals[(year, month)]
+        t = totals.get((year, month), {"uop": 0.0, "b2b": 0.0, "vat_collected": 0.0})
         fee = fees.get((year, month))
         has_invoice = t["b2b"] > 0
         zus = fee.zus_amount if (fee and has_invoice) else 0.0
@@ -146,6 +169,7 @@ def monthly_series(db: Session = Depends(get_db)):
                 zus_amount=round(zus, 2),
                 pit_amount=round(pit, 2),
                 vat_amount=round(vat, 2),
+                expenses_amount=round(expenses_by_month.get((year, month), 0.0), 2),
             )
         )
     return points
