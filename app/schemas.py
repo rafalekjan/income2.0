@@ -120,6 +120,38 @@ class YearSettingsUpdate(BaseModel):
     vat_rate: float
 
 
+class ExpenseCreate(BaseModel):
+    year: int
+    month: int
+    name: str
+    amount: float = 0.0
+    paid: bool = False
+    notes: str | None = None
+
+
+class ExpenseUpdate(BaseModel):
+    name: str | None = None
+    amount: float | None = None
+    paid: bool | None = None
+    notes: str | None = None
+
+
+class ExpenseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    year: int
+    month: int
+    name: str
+    amount: float
+    paid: bool
+    notes: str | None
+
+
+class CopyMonthRequest(BaseModel):
+    year: int
+    month: int
+
+
 class JobYearBreakdown(BaseModel):
     job_id: int
     job_name: str

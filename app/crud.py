@@ -219,3 +219,56 @@ def update_year_settings(db: Session, year: int, data: dict) -> models.YearSetti
 def list_year_settings(db: Session) -> list[models.YearSettings]:
     stmt = select(models.YearSettings).order_by(models.YearSettings.year)
     return list(db.scalars(stmt))
+
+
+def get_expense_years(db: Session) -> list[int]:
+    return sorted(set(db.scalars(select(models.Expense.year))))
+
+
+def get_expenses(db: Session, year: int, month: int | None = None) -> list[models.Expense]:
+    stmt = select(models.Expense).where(models.Expense.year == year)
+    if month is not None:
+        stmt = stmt.where(models.Expense.month == month)
+    stmt = stmt.order_by(models.Expense.month, models.Expense.id)
+    return list(db.scalars(stmt))
+
+
+def get_expense(db: Session, expense_id: int) -> models.Expense | None:
+    return db.get(models.Expense, expense_id)
+
+
+def create_expense(db: Session, data: dict) -> models.Expense:
+    expense = models.Expense(**data)
+    db.add(expense)
+    db.commit()
+    db.refresh(expense)
+    return expense
+
+
+def update_expense(db: Session, expense: models.Expense, data: dict) -> models.Expense:
+    for key, value in data.items():
+        setattr(expense, key, value)
+    db.commit()
+    db.refresh(expense)
+    return expense
+
+
+def delete_expense(db: Session, expense: models.Expense) -> None:
+    db.delete(expense)
+    db.commit()
+
+
+def copy_expenses_from_previous_month(db: Session, year: int, month: int) -> list[models.Expense]:
+    """Kopiuje pozycje z poprzedniego miesiąca (kwoty, bez odznaczania
+    "zapłacone" - zawsze startuje jako niezapłacone) do wskazanego miesiąca."""
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    source = get_expenses(db, prev_year, prev_month)
+    created = []
+    for item in source:
+        expense = models.Expense(year=year, month=month, name=item.name, amount=item.amount, paid=False)
+        db.add(expense)
+        created.append(expense)
+    db.commit()
+    for expense in created:
+        db.refresh(expense)
+    return created

@@ -78,6 +78,23 @@ class MonthlyB2BFees(Base):
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
+class Expense(Base):
+    """Pojedynczy wydatek/rachunek za dany miesiąc (np. Hipoteka, Czynsz,
+    Prąd). Każdy miesiąc ma w pełni niezależną listę pozycji - dodawanie i
+    usuwanie nie wpływa na inne miesiące (w przeciwieństwie do starego
+    arkusza, gdzie każda opłata była stałą kolumną dla całego roku)."""
+
+    __tablename__ = "expenses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    year: Mapped[int] = mapped_column(Integer)
+    month: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(200))
+    amount: Mapped[float] = mapped_column(Float, default=0.0)
+    paid: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
 class YearSettings(Base):
     __tablename__ = "year_settings"
 

@@ -7,6 +7,8 @@ const state = {
   entriesByYear: {},
   b2bFeesByYear: {},
   extraYears: new Set(),
+  expensesYear: new Date().getFullYear(),
+  expensesCollapsed: {},
   charts: {},
 };
 
@@ -74,6 +76,7 @@ function switchTab(tab) {
   const now = new Date().getFullYear();
   if (tab === "dashboard") renderDashboard();
   if (tab === "entries") { state.entriesYear = now; renderEntries(); }
+  if (tab === "expenses") { state.expensesYear = now; renderExpenses(); }
   if (tab === "settings") { state.settingsYear = now; renderSettings(); }
 }
 
@@ -793,6 +796,265 @@ function updateEntriesSummary(year) {
   });
   tbody.innerHTML = MONTHS.map((name, idx) => `<tr><td>${name}</td><td>${fmtMoney(totals[idx])}</td></tr>`).join("")
     + `<tr><td><b>Suma</b></td><td><b>${fmtMoney(totals.reduce((a, b) => a + b, 0))}</b></td></tr>`;
+}
+
+// ---------- Wydatki ----------
+function escapeAttr(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+async function renderExpenses() {
+  const el = document.getElementById("view-expenses");
+  const existingYears = await api("/api/expenses/years");
+
+  const candidateYears = new Set(existingYears);
+  const now = new Date().getFullYear();
+  candidateYears.add(now);
+  state.extraYears.forEach((y) => candidateYears.add(y));
+  candidateYears.add(state.expensesYear);
+  const years = [...candidateYears].sort((a, b) => a - b);
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="year-nav">
+        <button type="button" class="year-nav-btn" id="expenses-year-down" title="Poprzedni rok z listy" ${years.indexOf(state.expensesYear) <= 0 ? "disabled" : ""}>‹</button>
+        <select id="expenses-year" class="year-nav-select">
+          ${years.map((y) => `<option value="${y}" ${y === state.expensesYear ? "selected" : ""}>${y}</option>`).join("")}
+        </select>
+        <button type="button" class="year-nav-btn" id="expenses-year-up" title="Kolejny rok z listy" ${years.indexOf(state.expensesYear) >= years.length - 1 ? "disabled" : ""}>›</button>
+      </div>
+    </div>
+    <div id="expenses-months"></div>
+    <div class="card">
+      <h3>Podsumowanie miesięczne — ${state.expensesYear}</h3>
+      <table>
+        <thead><tr><th>Miesiąc</th><th>Suma wydatków</th></tr></thead>
+        <tbody id="expenses-summary-tbody"></tbody>
+      </table>
+    </div>
+  `;
+
+  document.getElementById("expenses-year").addEventListener("change", (e) => {
+    state.expensesYear = parseInt(e.target.value, 10);
+    renderExpenses();
+  });
+  document.getElementById("expenses-year-up").addEventListener("click", () => {
+    const idx = years.indexOf(state.expensesYear);
+    if (idx < years.length - 1) { state.expensesYear = years[idx + 1]; renderExpenses(); }
+  });
+  document.getElementById("expenses-year-down").addEventListener("click", () => {
+    const idx = years.indexOf(state.expensesYear);
+    if (idx > 0) { state.expensesYear = years[idx - 1]; renderExpenses(); }
+  });
+
+  await loadExpensesForYear(state.expensesYear);
+}
+
+async function loadExpensesForYear(year) {
+  const items = await api(`/api/expenses?year=${year}`);
+  const byMonth = {};
+  for (let m = 1; m <= 12; m++) byMonth[m] = [];
+  items.forEach((it) => { byMonth[it.month].push(it); });
+  state.expensesByYear ??= {};
+  state.expensesByYear[year] = byMonth;
+  renderExpenseMonths(year, byMonth);
+  updateExpensesSummary(year);
+}
+
+function monthExpenseSum(items) {
+  return items.reduce((a, it) => a + (it.amount || 0), 0);
+}
+
+// Aktualny miesiac zawsze na gorze, pod nim wstecz poprzednie (grudzien
+// przechodzi w listopad itd.). Miesiace z przyszlosci (dla biezacego roku)
+// ida na sam dol, w kolejnosci chronologicznej, domyslnie zwiniete.
+function expenseMonthOrder(year) {
+  const now = new Date();
+  const curKey = now.getFullYear() * 12 + now.getMonth(); // getMonth() jest 0-based, wiec to juz "rok*12+miesiac-1"
+  const past = [];
+  const future = [];
+  for (let m = 1; m <= 12; m++) {
+    const key = year * 12 + (m - 1);
+    (key <= curKey ? past : future).push(m);
+  }
+  past.sort((a, b) => b - a);
+  future.sort((a, b) => a - b);
+  return { past, future, curKey };
+}
+
+function isFutureMonth(year, month, curKey) {
+  return year * 12 + (month - 1) > curKey;
+}
+
+function renderExpenseMonths(year, byMonth) {
+  const container = document.getElementById("expenses-months");
+  const { past, future, curKey } = expenseMonthOrder(year);
+  const order = [...past, ...future];
+
+  container.innerHTML = order.map((month) => {
+    const name = MONTHS[month - 1];
+    const items = byMonth[month] || [];
+    const key = `${year}-${month}`;
+    const defaultCollapsed = isFutureMonth(year, month, curKey);
+    const collapsed = state.expensesCollapsed[key] ?? defaultCollapsed;
+
+    const rows = items.map((it) => `
+      <tr data-id="${it.id}">
+        <td><input type="text" class="exp-name" value="${escapeAttr(it.name)}" /></td>
+        <td><input type="number" step="0.01" class="exp-amount" value="${it.amount || ""}" /></td>
+        <td style="text-align:center"><input type="checkbox" class="exp-paid" ${it.paid ? "checked" : ""} /></td>
+        <td><button type="button" class="btn small danger" data-action="delete-expense" data-id="${it.id}">Usuń</button></td>
+      </tr>`).join("");
+
+    return `
+      <div class="card">
+        <div class="expense-month-header">
+          <button type="button" class="expense-collapse-btn" data-action="toggle-month" data-month="${month}">
+            <span class="chevron">${collapsed ? "▸" : "▾"}</span> ${name}
+          </button>
+          <span class="expense-month-sum-badge" id="expense-header-sum-${month}">${fmtMoney(monthExpenseSum(items))}</span>
+          <button type="button" class="btn small secondary" data-action="copy-month" data-month="${month}">Kopiuj z poprzedniego miesiąca</button>
+        </div>
+        <table id="expense-table-${month}" ${collapsed ? "hidden" : ""}>
+          <thead><tr><th>Nazwa</th><th>Kwota</th><th>Zapłacone</th><th></th></tr></thead>
+          <tbody id="expense-tbody-${month}">
+            ${rows}
+            <tr class="expense-add-row">
+              <td><input type="text" class="exp-new-name" placeholder="Nowy wydatek" /></td>
+              <td><input type="number" step="0.01" class="exp-new-amount" placeholder="0.00" /></td>
+              <td></td>
+              <td><button type="button" class="btn small" data-action="add-expense" data-month="${month}">+ Dodaj</button></td>
+            </tr>
+          </tbody>
+          <tfoot><tr><td><b>Suma</b></td><td><b id="expense-sum-${month}">${fmtMoney(monthExpenseSum(items))}</b></td><td colspan="2"></td></tr></tfoot>
+        </table>
+      </div>`;
+  }).join("");
+}
+
+function toggleExpenseMonth(year, month) {
+  const key = `${year}-${month}`;
+  const { curKey } = expenseMonthOrder(year);
+  const defaultCollapsed = isFutureMonth(year, month, curKey);
+  const currentlyCollapsed = state.expensesCollapsed[key] ?? defaultCollapsed;
+  const newCollapsed = !currentlyCollapsed;
+  state.expensesCollapsed[key] = newCollapsed;
+  const table = document.getElementById(`expense-table-${month}`);
+  const chevron = document.querySelector(`.expense-collapse-btn[data-month="${month}"] .chevron`);
+  if (table) table.hidden = newCollapsed;
+  if (chevron) chevron.textContent = newCollapsed ? "▸" : "▾";
+}
+
+function updateExpensesSummary(year) {
+  const byMonth = state.expensesByYear[year] || {};
+  const tbody = document.getElementById("expenses-summary-tbody");
+  if (!tbody) return;
+  const sums = MONTHS.map((_, idx) => monthExpenseSum(byMonth[idx + 1] || []));
+  tbody.innerHTML = MONTHS.map((name, idx) => `<tr><td>${name}</td><td>${fmtMoney(sums[idx])}</td></tr>`).join("")
+    + `<tr><td><b>Suma</b></td><td><b>${fmtMoney(sums.reduce((a, b) => a + b, 0))}</b></td></tr>`;
+}
+
+document.addEventListener("change", (ev) => {
+  if (!ev.target.closest("#expenses-months")) return;
+  if (!(ev.target.classList.contains("exp-name") || ev.target.classList.contains("exp-amount") || ev.target.classList.contains("exp-paid"))) return;
+  const tr = ev.target.closest("tr[data-id]");
+  if (!tr) return;
+  saveExpenseRow(parseInt(tr.dataset.id, 10));
+});
+
+document.addEventListener("click", (ev) => {
+  const toggleBtn = ev.target.closest('[data-action="toggle-month"]');
+  if (toggleBtn && toggleBtn.closest("#expenses-months")) {
+    toggleExpenseMonth(state.expensesYear, parseInt(toggleBtn.dataset.month, 10));
+    return;
+  }
+  const addBtn = ev.target.closest('[data-action="add-expense"]');
+  if (addBtn && addBtn.closest("#expenses-months")) {
+    addExpense(parseInt(addBtn.dataset.month, 10));
+    return;
+  }
+  const delBtn = ev.target.closest('[data-action="delete-expense"]');
+  if (delBtn && delBtn.closest("#expenses-months")) {
+    deleteExpense(parseInt(delBtn.dataset.id, 10));
+    return;
+  }
+  const copyBtn = ev.target.closest('[data-action="copy-month"]');
+  if (copyBtn && copyBtn.closest("#expenses-months")) {
+    copyExpenseMonth(parseInt(copyBtn.dataset.month, 10));
+  }
+});
+
+async function saveExpenseRow(id) {
+  const tr = document.querySelector(`#expenses-months tr[data-id="${id}"]`);
+  if (!tr) return;
+  const payload = {
+    name: tr.querySelector(".exp-name").value.trim(),
+    amount: parseFloat(tr.querySelector(".exp-amount").value) || 0,
+    paid: tr.querySelector(".exp-paid").checked,
+  };
+  try {
+    const saved = await api(`/api/expenses/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+    const year = state.expensesYear;
+    const list = state.expensesByYear[year][saved.month];
+    const i = list.findIndex((it) => it.id === id);
+    if (i >= 0) list[i] = saved;
+    const sum = monthExpenseSum(list);
+    const sumEl = document.getElementById(`expense-sum-${saved.month}`);
+    if (sumEl) sumEl.textContent = fmtMoney(sum);
+    const badgeEl = document.getElementById(`expense-header-sum-${saved.month}`);
+    if (badgeEl) badgeEl.textContent = fmtMoney(sum);
+    updateExpensesSummary(year);
+    showToast("Zapisano ✓", "ok");
+  } catch (err) {
+    showToast("Błąd zapisu", "err");
+  }
+}
+
+async function addExpense(month) {
+  const year = state.expensesYear;
+  const tbody = document.getElementById(`expense-tbody-${month}`);
+  const name = tbody.querySelector(".exp-new-name").value.trim();
+  if (!name) { showToast("Podaj nazwę wydatku", "err"); return; }
+  const amount = parseFloat(tbody.querySelector(".exp-new-amount").value) || 0;
+  try {
+    await api("/api/expenses", {
+      method: "POST",
+      body: JSON.stringify({ year, month, name, amount, paid: false }),
+    });
+    showToast("Dodano ✓", "ok");
+    await loadExpensesForYear(year);
+  } catch (err) {
+    showToast("Błąd zapisu", "err");
+  }
+}
+
+async function deleteExpense(id) {
+  const year = state.expensesYear;
+  try {
+    await api(`/api/expenses/${id}`, { method: "DELETE" });
+    showToast("Usunięto", "ok");
+    await loadExpensesForYear(year);
+  } catch (err) {
+    showToast("Błąd usuwania", "err");
+  }
+}
+
+async function copyExpenseMonth(month) {
+  const year = state.expensesYear;
+  try {
+    const created = await api("/api/expenses/copy-month", {
+      method: "POST",
+      body: JSON.stringify({ year, month }),
+    });
+    if (created.length === 0) {
+      showToast("Poprzedni miesiąc jest pusty", "err");
+      return;
+    }
+    showToast(`Skopiowano ${created.length} pozycji`, "ok");
+    await loadExpensesForYear(year);
+  } catch (err) {
+    showToast("Błąd kopiowania", "err");
+  }
 }
 
 // ---------- Settings ----------

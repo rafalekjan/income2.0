@@ -17,8 +17,7 @@ kontenera.
 
 ## Moduły
 
-- **Prace** — dodawanie/edycja/kończenie prac UoP i B2B (dowolna liczba, w dowolnym momencie).
-- **Wpisy** — dla każdej pracy i miesiąca:
+- **Dochody** — dla każdej pracy i miesiąca:
   - UoP: kwota przelewu netto.
   - B2B: godziny + stawka/h (przychód netto liczony automatycznie, edytowalny)
     oraz checkbox **"Faktura wystawiona"** — dopiero zaznaczenie go liczy dany
@@ -40,8 +39,19 @@ kontenera.
     (tylko wizualnie — zawsze można je edytować) i **automatycznie czyszczone**
     z ewentualnych "widmowych" wartości (np. z importu albo sprzed zmiany dat
     pracy), gdy tylko strona je wyrenderuje.
-- **Ustawienia** — stawki/kwoty używane do automatycznych wyliczeń, osobno na
-  każdy rok (bo zmieniają się co roku), w tym:
+- **Wydatki** — niezależny od Dochodów moduł do pamiętania o rachunkach/
+  rozliczeniach, wzorowany na sekcji rachunków domowych z arkusza-źródła.
+  Każdy miesiąc to osobna, dowolnie długa lista pozycji (nazwa + kwota +
+  checkbox "zapłacone") — pozycje dodaje się i usuwa przyciskiem niezależnie
+  w każdym miesiącu (bez sztywnej siatki kategorii). Przycisk "Kopiuj z
+  poprzedniego miesiąca" przenosi nazwy i kwoty z miesiąca wcześniej (z
+  grudnia poprzedniego roku dla stycznia), zawsze jako niezapłacone — to tylko
+  wygoda przy powtarzalnych rachunkach, każdą pozycję można potem dowolnie
+  zmienić lub usunąć.
+- **Ustawienia** — tu też mieszczą się **Prace** (dodawanie/edycja/kończenie
+  prac UoP i B2B, dowolna liczba, w dowolnym momencie) oraz stawki/kwoty
+  używane do automatycznych wyliczeń ZUS/PIT/VAT, osobno na każdy rok (bo
+  zmieniają się co roku), w tym:
   - ZUS społeczny osobno dla przypadku "bez UoP" i "przy zbiegu z UoP" (gdy w
     danym miesiącu masz równolegle aktywną pracę na etacie, ZUS społeczny od
     B2B zwykle nie jest należny — domyślnie 0 zł).
@@ -49,9 +59,9 @@ kontenera.
     preferencyjna stawka z IP Box).
 - **Dashboard** — wykresy i podsumowania roczne/miesięczne ze wszystkich lat.
 
-Zapis w zakładce Wpisy jest automatyczny (po opuszczeniu pola / zaznaczeniu
-checkboxa) — potwierdzenie "Zapisano ✓" pojawia się jako powiadomienie na górze
-ekranu i znika samo po 3 sekundach.
+Zapis w zakładkach Dochody i Wydatki jest automatyczny (po opuszczeniu pola /
+zaznaczeniu checkboxa) — potwierdzenie "Zapisano ✓" pojawia się jako
+powiadomienie na górze ekranu i znika samo po 3 sekundach.
 
 ## Ważne założenia dot. wyliczeń
 

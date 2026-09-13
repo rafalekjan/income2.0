@@ -205,6 +205,45 @@ button.btn:disabled {
   cursor: not-allowed;
 }
 
+.expense-month-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.expense-collapse-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: inherit;
+}
+
+.expense-collapse-btn .chevron {
+  color: var(--muted);
+  font-size: 12px;
+  width: 12px;
+  display: inline-block;
+  text-align: center;
+}
+
+.expense-month-sum-badge {
+  color: var(--muted);
+  font-size: 13px;
+  margin-right: auto;
+}
+
+tr.expense-add-row td { border-bottom: none; padding-top: 10px; }
+tr.expense-add-row .exp-new-name { width: 160px; }
+tr.expense-add-row .exp-new-amount { width: 90px; }
+
 .year-nav {
   display: flex;
   align-items: center;
