@@ -145,16 +145,16 @@ async function renderDashboard() {
       <div class="stat"><div class="label">${latest.year} — wydatki</div><div class="value">${fmtMoney(latest.total_expenses)}</div></div>
     </div>
 
-    <div class="card">
+    <div class="card zoom-card">
       <h3>Dochód i wydatki roczne (+ średnia miesięczna)</h3>
       <div class="chart-wrap chart-wrap-lg"><canvas id="chart-yearly"></canvas></div>
     </div>
-    <div class="card">
+    <div class="card zoom-card">
       <h3>Trend miesięczny — wszystkie lata</h3>
       <div class="chart-wrap chart-wrap-lg"><canvas id="chart-monthly"></canvas></div>
     </div>
 
-    <div class="card">
+    <div class="card zoom-card">
       <h3>Podsumowanie roczne</h3>
       <p class="muted">Dochód razem = UoP + przychód B2B + VAT należny (pobrany od klienta razem z fakturą) − ZUS − PIT − VAT faktycznie zapłacony do US.
       Jeśli zapłacisz mniej VAT-u niż pobrałeś (np. dzięki odliczeniom z kosztów), różnica zwiększa dochód. Wydatki pochodzą z osobnej zakładki Wydatki i nie są odejmowane od dochodu na wykresach.</p>
@@ -892,22 +892,16 @@ function monthExpenseSum(items) {
   return items.reduce((a, it) => a + (isTransferCategory(it.name) ? 0 : (it.amount || 0)), 0);
 }
 
-// Aktualny miesiac zawsze na gorze, pod nim wstecz poprzednie (grudzien
-// przechodzi w listopad itd.). Miesiace z przyszlosci (dla biezacego roku)
-// ida na sam dol, tylko przygaszone wizualnie (jak nieaktywne miesiace we
-// Wpisach) - tabela jest kompaktowa, wiec zwijanie nie jest tu potrzebne.
-function expenseMonthOrder(year) {
+// Miesiace przyszle (dla biezacego roku) sa tylko przygaszone wizualnie
+// (dalej edytowalne) - kolejnosc wierszy jest zawsze styczen -> grudzien.
+function futureMonths(year) {
   const now = new Date();
   const curKey = now.getFullYear() * 12 + now.getMonth();
-  const past = [];
-  const future = [];
+  const result = [];
   for (let m = 1; m <= 12; m++) {
-    const key = year * 12 + (m - 1);
-    (key <= curKey ? past : future).push(m);
+    if (year * 12 + (m - 1) > curKey) result.push(m);
   }
-  past.sort((a, b) => b - a);
-  future.sort((a, b) => a - b);
-  return { past, future };
+  return result;
 }
 
 // Kolejnosc kolumn wg pierwszego wystapienia danej nazwy w roku (styczen ->
@@ -922,8 +916,8 @@ function expenseNamesForYear(byMonth) {
 
 function renderExpenseMonths(year, byMonth) {
   const container = document.getElementById("expenses-months");
-  const { past, future } = expenseMonthOrder(year);
-  const order = [...past, ...future];
+  const future = futureMonths(year);
+  const order = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   const names = expenseNamesForYear(byMonth);
 
   if (names.length === 0) {
@@ -936,7 +930,7 @@ function renderExpenseMonths(year, byMonth) {
   } else {
     const headerRow = names.map((name, idx) => {
       const isTransfer = isTransferCategory(name);
-      return `<th class="${tintClass(idx)} group-start cat-col hover-col ${isTransfer ? "is-transfer-col" : ""}" data-col="${idx}" title="${isTransfer ? "Przelew między własnymi kontami - wyłączone z sum (zarządzaj w Ustawieniach)" : ""}">${escapeAttr(name)}</th>`;
+      return `<th class="${tintClass(idx)} group-start cat-col ${isTransfer ? "is-transfer-col" : ""}" title="${isTransfer ? "Przelew między własnymi kontami - wyłączone z sum (zarządzaj w Ustawieniach)" : ""}">${escapeAttr(name)}</th>`;
     }).join("");
 
     const rows = order.map((month) => {
@@ -950,7 +944,7 @@ function renderExpenseMonths(year, byMonth) {
         const excluded = isTransferCategory(name);
         const id = item ? item.id : "";
         return `
-          <td class="${t} group-start cat-col hover-col" data-col="${idx}">
+          <td class="${t} group-start cat-col">
             <div class="expense-cell ${paid ? "is-paid" : ""} ${excluded ? "is-excluded" : ""}">
               <input type="number" step="0.01" class="exp-amount" data-name="${escapeAttr(name)}" data-month="${month}" data-id="${id}" value="${amount || ""}" />
               <input type="checkbox" class="exp-paid" data-name="${escapeAttr(name)}" data-month="${month}" data-id="${id}" title="Zapłacone" ${paid ? "checked" : ""} />
@@ -1031,30 +1025,6 @@ document.addEventListener("click", (ev) => {
   if (delBtn && delBtn.closest("#expenses-months")) {
     deleteExpenseFromMonth(state.expensesYear, parseInt(delBtn.dataset.month, 10), delBtn.dataset.name);
   }
-});
-
-// Wspolny mechanizm dla Wydatkow (".cat-col") i Wpisow (".group-*") -
-// kolumny sa domyslnie waskie, a po najechaniu na dowolna komorke danej
-// kolumny/grupy cala ona (naglowek + wszystkie miesiace) sie rozszerza.
-// Dziala dla dowolnej tabeli z komorkami oznaczonymi klasa "hover-col" i
-// atrybutem data-col (stan najechania trzymany per-tabela w dataset).
-document.addEventListener("mouseover", (ev) => {
-  const cell = ev.target.closest(".hover-col");
-  if (!cell) return;
-  const table = cell.closest("table");
-  const col = cell.dataset.col;
-  if (table.dataset.hoverCol === col) return;
-  table.querySelectorAll(".hover-col.col-hover").forEach((c) => c.classList.remove("col-hover"));
-  table.querySelectorAll(`.hover-col[data-col="${col}"]`).forEach((c) => c.classList.add("col-hover"));
-  table.dataset.hoverCol = col;
-});
-
-document.addEventListener("mouseout", (ev) => {
-  const table = ev.target.closest("table");
-  if (!table || !table.dataset.hoverCol) return;
-  if (ev.relatedTarget && table.contains(ev.relatedTarget)) return;
-  table.querySelectorAll(".hover-col.col-hover").forEach((c) => c.classList.remove("col-hover"));
-  delete table.dataset.hoverCol;
 });
 
 async function saveExpenseCell(year, month, name, id, amount, paid) {
