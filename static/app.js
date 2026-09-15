@@ -39,6 +39,42 @@ function fmtMoney(v) {
   return (v ?? 0).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
 }
 
+// Do wyswietlania surowej wartosci w polu edytowalnym (nie sformatowanej
+// jak fmtMoney) - obcina do max 2 miejsc po przecinku, bez dopisywania
+// koncowych zer (1500 zostaje "1500", nie "1500.00").
+function roundCell(v) {
+  if (v === null || v === undefined || v === "") return "";
+  const num = typeof v === "number" ? v : parseFloat(v);
+  if (isNaN(num)) return "";
+  return Math.round(num * 100) / 100;
+}
+
+// Pola liczbowe dzialaja jak uproszczony Excel - obok zwyklej liczby mozna
+// wpisac prosta sume kilku wartosci oddzielonych "+", np. "1500+1600.5"
+// albo "1500+1600,5" (przecinek jako separator dziesietny tez dziala).
+function evalCalcExpr(raw) {
+  const str = String(raw ?? "").trim();
+  if (str === "") return 0;
+  const parts = str.split("+");
+  let sum = 0;
+  for (const part of parts) {
+    const num = parseFloat(part.trim().replace(",", "."));
+    if (isNaN(num)) return NaN;
+    sum += num;
+  }
+  return sum;
+}
+
+// Jak evalCalcExpr, ale przy okazji nadpisuje wpisana tresc pola wynikiem
+// (np. "1500+1600" -> "3100") - do uzycia przy zapisie/blur, NIE przy
+// podgladzie "na biezaco" podczas pisania (przedwczesnie przeszkadzaloby).
+function parseCalcInput(el) {
+  const raw = String(el.value ?? "");
+  const result = evalCalcExpr(raw);
+  if (!isNaN(result) && raw.includes("+")) el.value = result;
+  return result;
+}
+
 function monthActive(job, year, month) {
   const start = new Date(job.start_date);
   const startYM = start.getFullYear() * 12 + start.getMonth();
@@ -294,8 +330,8 @@ async function renderJobs() {
               <option value="B2B">B2B</option>
             </select>
           </div>
-          <div class="field" id="job-rate-field"><label>Domyślna stawka/h</label><input type="number" step="0.01" id="job-rate" /></div>
-          <div class="field" id="job-fixed-net-field"><label>Stała kwota netto/mies. (opcjonalnie)</label><input type="number" step="0.01" id="job-fixed-net" /></div>
+          <div class="field" id="job-rate-field"><label>Domyślna stawka/h</label><input type="text" inputmode="decimal" id="job-rate" /></div>
+          <div class="field" id="job-fixed-net-field"><label>Stała kwota netto/mies. (opcjonalnie)</label><input type="text" inputmode="decimal" id="job-fixed-net" /></div>
           <div class="field" id="job-vat-field">
             <label><input type="checkbox" id="job-vat-payer" /> Płatnik VAT</label>
           </div>
@@ -348,8 +384,8 @@ async function autosaveJob() {
   const payload = {
     name,
     type,
-    default_hourly_rate: type === "B2B" ? (parseFloat(document.getElementById("job-rate").value) || null) : null,
-    fixed_monthly_net: type === "B2B" ? (parseFloat(document.getElementById("job-fixed-net").value) || null) : null,
+    default_hourly_rate: type === "B2B" ? (parseCalcInput(document.getElementById("job-rate")) || null) : null,
+    fixed_monthly_net: type === "B2B" ? (parseCalcInput(document.getElementById("job-fixed-net")) || null) : null,
     vat_payer: type === "B2B" ? document.getElementById("job-vat-payer").checked : false,
     start_date: startDate,
     end_date: document.getElementById("job-end").value || null,
@@ -379,7 +415,7 @@ function renderJobsTable() {
     <tr>
       <td>${j.name}</td>
       <td><span class="badge ${j.type.toLowerCase()}">${j.type}</span></td>
-      <td>${j.type === "B2B" && j.default_hourly_rate != null ? j.default_hourly_rate + " zł" : "—"}</td>
+      <td>${j.type === "B2B" && j.default_hourly_rate != null ? roundCell(j.default_hourly_rate) + " zł" : "—"}</td>
       <td>${j.type === "B2B" && j.fixed_monthly_net != null ? fmtMoney(j.fixed_monthly_net) : "—"}</td>
       <td>${j.type === "B2B" ? (j.vat_payer ? "tak" : "nie") : "—"}</td>
       <td>${j.start_date}</td>
@@ -401,8 +437,8 @@ function editJob(id) {
   document.getElementById("job-name").value = j.name;
   document.getElementById("job-type").value = j.type;
   document.getElementById("job-type").dispatchEvent(new Event("change"));
-  document.getElementById("job-rate").value = j.default_hourly_rate ?? "";
-  document.getElementById("job-fixed-net").value = j.fixed_monthly_net ?? "";
+  document.getElementById("job-rate").value = roundCell(j.default_hourly_rate);
+  document.getElementById("job-fixed-net").value = roundCell(j.fixed_monthly_net);
   document.getElementById("job-vat-payer").checked = !!j.vat_payer;
   document.getElementById("job-start").value = j.start_date;
   document.getElementById("job-end").value = j.end_date ?? "";
@@ -586,8 +622,8 @@ function renderEntriesJobs(year, byJob) {
       const t = tintClass(jobIdx);
 
       if (job.type !== "B2B") {
-        return `<td class="${t} group-start group-uop"><input type="number" step="0.01" class="f-net ${dim}" data-job="${job.id}" data-month="${month}"
-          id="net-${job.id}-${month}" value="${e.net_revenue || ""}" /></td>`;
+        return `<td class="${t} group-start group-uop"><input type="text" inputmode="decimal" class="f-net ${dim}" data-job="${job.id}" data-month="${month}"
+          id="net-${job.id}-${month}" value="${roundCell(e.net_revenue) || ""}" /></td>`;
       }
 
       // Część umów B2B ma stałą kwotę miesięczną zamiast stawki godzinowej -
@@ -595,14 +631,14 @@ function renderEntriesJobs(year, byJob) {
       // netto podpowiada się automatycznie tą stałą kwotą.
       const isFixed = job.fixed_monthly_net != null;
       const hoursRateDim = (!active || isFixed) ? "dim" : "";
-      const netValue = e.net_revenue || (active && isFixed ? job.fixed_monthly_net : "") || "";
+      const netValue = roundCell(e.net_revenue || (active && isFixed ? job.fixed_monthly_net : "") || "");
 
       return `
-        <td class="${t} group-start group-hours"><input type="number" step="0.01" class="f-hours ${hoursRateDim}" data-job="${job.id}" data-month="${month}"
-          id="hours-${job.id}-${month}" value="${e.hours ?? ""}" /></td>
-        <td class="${t} group-rate"><input type="number" step="0.01" class="f-rate ${hoursRateDim}" data-job="${job.id}" data-month="${month}"
-          id="rate-${job.id}-${month}" value="${e.hourly_rate ?? (active && !isFixed ? job.default_hourly_rate : null) ?? ""}" /></td>
-        <td class="${t} group-net"><input type="number" step="0.01" class="f-net ${dim}" data-job="${job.id}" data-month="${month}"
+        <td class="${t} group-start group-hours"><input type="text" inputmode="decimal" class="f-hours ${hoursRateDim}" data-job="${job.id}" data-month="${month}"
+          id="hours-${job.id}-${month}" value="${roundCell(e.hours)}" /></td>
+        <td class="${t} group-rate"><input type="text" inputmode="decimal" class="f-rate ${hoursRateDim}" data-job="${job.id}" data-month="${month}"
+          id="rate-${job.id}-${month}" value="${roundCell(e.hourly_rate ?? (active && !isFixed ? job.default_hourly_rate : null))}" /></td>
+        <td class="${t} group-net"><input type="text" inputmode="decimal" class="f-net ${dim}" data-job="${job.id}" data-month="${month}"
           id="net-${job.id}-${month}" value="${netValue}" /></td>
         <td class="${t} group-invoiced" style="text-align:center"><input type="checkbox" class="f-invoiced ${dim}" data-job="${job.id}" data-month="${month}"
           id="invoiced-${job.id}-${month}" ${e.invoiced ? "checked" : ""} title="Faktura wystawiona" /></td>`;
@@ -672,14 +708,20 @@ function renderB2BFeesCard(year, byMonth) {
       toClear.push(month);
     }
 
+    // Niezaplacona oplata z kwota > 0 ma sie rzucac w oczy - zeby bylo od
+    // razu widac co jeszcze trzeba uregulowac w danym miesiacu.
+    const zusUnpaid = !zusPaid && zus ? "unpaid-fee" : "";
+    const pitUnpaid = !pitPaid && pit ? "unpaid-fee" : "";
+    const vatUnpaid = !vatPaid && vat ? "unpaid-fee" : "";
+
     return `<tr id="fee-row-${month}" data-month="${month}" class="${active ? "" : "inactive-month"}">
       <td class="month-col">${name}</td>
-      <td class="tint-0 group-start fee-amount"><input type="number" step="0.01" class="ff-zus ${dim}" value="${zus || ""}" /></td>
-      <td class="tint-0 fee-paid"><input type="checkbox" class="ff-zus-paid ${dim}" ${zusPaid ? "checked" : ""} /></td>
-      <td class="tint-1 group-start fee-amount"><input type="number" step="0.01" class="ff-pit ${dim}" value="${pit || ""}" /></td>
-      <td class="tint-1 fee-paid"><input type="checkbox" class="ff-pit-paid ${dim}" ${pitPaid ? "checked" : ""} /></td>
-      <td class="tint-2 group-start fee-amount"><input type="number" step="0.01" class="ff-vat ${dim}" value="${vat || ""}" /></td>
-      <td class="tint-2 fee-paid"><input type="checkbox" class="ff-vat-paid ${dim}" ${vatPaid ? "checked" : ""} /></td>
+      <td class="tint-0 group-start fee-amount ${zusUnpaid}"><input type="text" inputmode="decimal" class="ff-zus ${dim}" value="${roundCell(zus) || ""}" /></td>
+      <td class="tint-0 fee-paid ${zusUnpaid}"><input type="checkbox" class="ff-zus-paid ${dim}" ${zusPaid ? "checked" : ""} /></td>
+      <td class="tint-1 group-start fee-amount ${pitUnpaid}"><input type="text" inputmode="decimal" class="ff-pit ${dim}" value="${roundCell(pit) || ""}" /></td>
+      <td class="tint-1 fee-paid ${pitUnpaid}"><input type="checkbox" class="ff-pit-paid ${dim}" ${pitPaid ? "checked" : ""} /></td>
+      <td class="tint-2 group-start fee-amount ${vatUnpaid}"><input type="text" inputmode="decimal" class="ff-vat ${dim}" value="${roundCell(vat) || ""}" /></td>
+      <td class="tint-2 fee-paid ${vatUnpaid}"><input type="checkbox" class="ff-vat-paid ${dim}" ${vatPaid ? "checked" : ""} /></td>
       <td class="fee-action"><button class="btn small secondary${dim || (zus || pit || vat) ? " faded" : ""}" onclick="recalcFeeRow(${year}, ${month})">Przelicz</button></td>
     </tr>`;
   }).join("");
@@ -720,8 +762,8 @@ document.addEventListener("input", (ev) => {
   const rate = document.getElementById(`rate-${jobId}-${month}`);
   const net = document.getElementById(`net-${jobId}-${month}`);
   if (hours && rate && net) {
-    const h = parseFloat(hours.value) || 0;
-    const r = parseFloat(rate.value) || 0;
+    const h = evalCalcExpr(hours.value) || 0;
+    const r = evalCalcExpr(rate.value) || 0;
     net.value = (h * r) || "";
   }
 });
@@ -761,21 +803,35 @@ async function saveFeeRow(year, month) {
   const payload = {
     year,
     month,
-    zus_amount: parseFloat(tr.querySelector(".ff-zus").value) || 0,
+    zus_amount: parseCalcInput(tr.querySelector(".ff-zus")) || 0,
     zus_paid: tr.querySelector(".ff-zus-paid").checked,
-    pit_amount: parseFloat(tr.querySelector(".ff-pit").value) || 0,
+    pit_amount: parseCalcInput(tr.querySelector(".ff-pit")) || 0,
     pit_paid: tr.querySelector(".ff-pit-paid").checked,
-    vat_amount: parseFloat(tr.querySelector(".ff-vat").value) || 0,
+    vat_amount: parseCalcInput(tr.querySelector(".ff-vat")) || 0,
     vat_paid: tr.querySelector(".ff-vat-paid").checked,
   };
   try {
     const saved = await api("/api/b2b-fees", { method: "POST", body: JSON.stringify(payload) });
     (state.b2bFeesByYear[year] ??= {})[month] = saved;
     updateEntriesSummary(year);
+    updateFeeRowHighlight(tr, saved);
     showToast("Zapisano ✓", "ok");
   } catch (err) {
     showToast("Błąd zapisu", "err");
   }
+}
+
+// Odswieza na biezaco, ktore oplaty w wierszu sa niezaplacone (bez pelnego
+// przeladowania tabeli) - zeby podswietlenie zaraz reagowalo na checkbox.
+function updateFeeRowHighlight(tr, fee) {
+  const setPair = (inputSelector, paidSelector, amount, paid) => {
+    const unpaid = !!(!paid && amount);
+    tr.querySelector(inputSelector).closest("td").classList.toggle("unpaid-fee", unpaid);
+    tr.querySelector(paidSelector).closest("td").classList.toggle("unpaid-fee", unpaid);
+  };
+  setPair(".ff-zus", ".ff-zus-paid", fee.zus_amount, fee.zus_paid);
+  setPair(".ff-pit", ".ff-pit-paid", fee.pit_amount, fee.pit_paid);
+  setPair(".ff-vat", ".ff-vat-paid", fee.vat_amount, fee.vat_paid);
 }
 
 async function saveRow(jobId, year, month, isB2B, propagateRate = false) {
@@ -784,11 +840,11 @@ async function saveRow(jobId, year, month, isB2B, propagateRate = false) {
     job_id: jobId,
     year,
     month,
-    net_revenue: parseFloat(netEl.value) || 0,
+    net_revenue: parseCalcInput(netEl) || 0,
   };
   if (isB2B) {
-    payload.hours = parseFloat(document.getElementById(`hours-${jobId}-${month}`).value) || null;
-    payload.hourly_rate = parseFloat(document.getElementById(`rate-${jobId}-${month}`).value) || null;
+    payload.hours = parseCalcInput(document.getElementById(`hours-${jobId}-${month}`)) || null;
+    payload.hourly_rate = parseCalcInput(document.getElementById(`rate-${jobId}-${month}`)) || null;
     payload.invoiced = document.getElementById(`invoiced-${jobId}-${month}`).checked;
   }
   try {
@@ -942,11 +998,12 @@ function renderExpenseMonths(year, byMonth) {
         const amount = item ? item.amount : null;
         const paid = item ? item.paid : false;
         const excluded = isTransferCategory(name);
+        const isUnpaid = !!(item && amount && !paid);
         const id = item ? item.id : "";
         return `
           <td class="${t} group-start cat-col">
-            <div class="expense-cell ${paid ? "is-paid" : ""} ${excluded ? "is-excluded" : ""}">
-              <input type="number" step="0.01" class="exp-amount" data-name="${escapeAttr(name)}" data-month="${month}" data-id="${id}" value="${amount || ""}" />
+            <div class="expense-cell ${paid ? "is-paid" : ""} ${excluded ? "is-excluded" : ""} ${isUnpaid ? "is-unpaid" : ""}">
+              <input type="text" inputmode="decimal" class="exp-amount" data-name="${escapeAttr(name)}" data-month="${month}" data-id="${id}" value="${roundCell(amount) || ""}" />
               <input type="checkbox" class="exp-paid" data-name="${escapeAttr(name)}" data-month="${month}" data-id="${id}" title="Zapłacone" ${paid ? "checked" : ""} />
               ${item ? `<button type="button" class="expense-cell-del" data-action="delete-from-month" data-name="${escapeAttr(name)}" data-month="${month}" title="Zakończ „${escapeAttr(name)}” od tego miesiąca (usuwa ten i kolejne miesiące, wcześniejsze zostają)">✕</button>` : ""}
             </div>
@@ -1015,7 +1072,7 @@ document.addEventListener("change", (ev) => {
   const month = parseInt(ev.target.dataset.month, 10);
   const name = ev.target.dataset.name;
   const id = ev.target.dataset.id ? parseInt(ev.target.dataset.id, 10) : null;
-  const amount = parseFloat(amountInput.value) || 0;
+  const amount = parseCalcInput(amountInput) || 0;
   const paid = paidInput.checked;
   saveExpenseCell(state.expensesYear, month, name, id, amount, paid);
 });
@@ -1234,10 +1291,10 @@ async function renderRatesSection() {
     <h3>Parametry na rok ${selectedYear}</h3>
     <form id="settings-form">
       <div class="form-row">
-        <div class="field"><label>ZUS społeczny miesięcznie — bez UoP (zł)</label><input type="number" step="0.01" id="s-zus-spoleczny" value="${s.zus_spoleczny_monthly}" /></div>
-        <div class="field"><label>ZUS społeczny miesięcznie — przy zbiegu z UoP (zł)</label><input type="number" step="0.01" id="s-zus-spoleczny-uop" value="${s.zus_spoleczny_with_uop_monthly}" /></div>
-        <div class="field"><label>Stawka składki zdrowotnej (%)</label><input type="number" step="0.01" id="s-zus-zdrow-rate" value="${(s.zus_zdrowotna_rate * 100).toFixed(2)}" /></div>
-        <div class="field"><label>Minimalna składka zdrowotna (zł)</label><input type="number" step="0.01" id="s-zus-zdrow-min" value="${s.zus_zdrowotna_min}" /></div>
+        <div class="field"><label>ZUS społeczny miesięcznie — bez UoP (zł)</label><input type="text" inputmode="decimal" id="s-zus-spoleczny" value="${roundCell(s.zus_spoleczny_monthly)}" /></div>
+        <div class="field"><label>ZUS społeczny miesięcznie — przy zbiegu z UoP (zł)</label><input type="text" inputmode="decimal" id="s-zus-spoleczny-uop" value="${roundCell(s.zus_spoleczny_with_uop_monthly)}" /></div>
+        <div class="field"><label>Stawka składki zdrowotnej (%)</label><input type="text" inputmode="decimal" id="s-zus-zdrow-rate" value="${(s.zus_zdrowotna_rate * 100).toFixed(2)}" /></div>
+        <div class="field"><label>Minimalna składka zdrowotna (zł)</label><input type="text" inputmode="decimal" id="s-zus-zdrow-min" value="${roundCell(s.zus_zdrowotna_min)}" /></div>
       </div>
       <div class="form-row">
         <div class="field"><label>Sposób liczenia PIT</label>
@@ -1246,9 +1303,9 @@ async function renderRatesSection() {
             <option value="fixed" ${s.pit_mode === "fixed" ? "selected" : ""}>Stała kwota (np. IP Box)</option>
           </select>
         </div>
-        <div class="field" id="s-pit-rate-field"><label>Stawka PIT liniowy (%)</label><input type="number" step="0.01" id="s-pit-rate" value="${(s.pit_rate * 100).toFixed(2)}" /></div>
-        <div class="field" id="s-pit-fixed-field"><label>Stała kwota PIT miesięcznie (zł)</label><input type="number" step="0.01" id="s-pit-fixed" value="${s.pit_fixed_amount}" /></div>
-        <div class="field"><label>Stawka VAT (%)</label><input type="number" step="0.01" id="s-vat-rate" value="${(s.vat_rate * 100).toFixed(2)}" /></div>
+        <div class="field" id="s-pit-rate-field"><label>Stawka PIT liniowy (%)</label><input type="text" inputmode="decimal" id="s-pit-rate" value="${(s.pit_rate * 100).toFixed(2)}" /></div>
+        <div class="field" id="s-pit-fixed-field"><label>Stała kwota PIT miesięcznie (zł)</label><input type="text" inputmode="decimal" id="s-pit-fixed" value="${roundCell(s.pit_fixed_amount)}" /></div>
+        <div class="field"><label>Stawka VAT (%)</label><input type="text" inputmode="decimal" id="s-vat-rate" value="${(s.vat_rate * 100).toFixed(2)}" /></div>
       </div>
     </form>
     <p class="muted">Zmiany zapisują się automatycznie.</p>
@@ -1266,14 +1323,14 @@ async function renderRatesSection() {
   document.getElementById("settings-form").addEventListener("submit", (ev) => ev.preventDefault());
   document.getElementById("settings-form").addEventListener("change", async () => {
     const payload = {
-      zus_spoleczny_monthly: parseFloat(document.getElementById("s-zus-spoleczny").value) || 0,
-      zus_spoleczny_with_uop_monthly: parseFloat(document.getElementById("s-zus-spoleczny-uop").value) || 0,
-      zus_zdrowotna_rate: (parseFloat(document.getElementById("s-zus-zdrow-rate").value) || 0) / 100,
-      zus_zdrowotna_min: parseFloat(document.getElementById("s-zus-zdrow-min").value) || 0,
+      zus_spoleczny_monthly: parseCalcInput(document.getElementById("s-zus-spoleczny")) || 0,
+      zus_spoleczny_with_uop_monthly: parseCalcInput(document.getElementById("s-zus-spoleczny-uop")) || 0,
+      zus_zdrowotna_rate: (parseCalcInput(document.getElementById("s-zus-zdrow-rate")) || 0) / 100,
+      zus_zdrowotna_min: parseCalcInput(document.getElementById("s-zus-zdrow-min")) || 0,
       pit_mode: pitModeSelect.value,
-      pit_rate: (parseFloat(document.getElementById("s-pit-rate").value) || 0) / 100,
-      pit_fixed_amount: parseFloat(document.getElementById("s-pit-fixed").value) || 0,
-      vat_rate: (parseFloat(document.getElementById("s-vat-rate").value) || 0) / 100,
+      pit_rate: (parseCalcInput(document.getElementById("s-pit-rate")) || 0) / 100,
+      pit_fixed_amount: parseCalcInput(document.getElementById("s-pit-fixed")) || 0,
+      vat_rate: (parseCalcInput(document.getElementById("s-vat-rate")) || 0) / 100,
     };
     try {
       await api(`/api/settings/${selectedYear}`, { method: "PUT", body: JSON.stringify(payload) });

@@ -287,6 +287,13 @@ button.btn:disabled {
    pierwszy rzut oka nawet gdy checkbox jest schowany (waska kolumna). */
 .expense-cell.is-paid { border-left-color: var(--ok); }
 
+/* Niezaplacona pozycja z kwota > 0 ma sie rzucac w oczy - to wlasnie trzeba
+   jeszcze uregulowac w danym miesiacu. */
+.expense-cell.is-unpaid {
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
 /* Przelew miedzy wlasnymi kontami - wyjatek, nie realny wydatek. Kwota
    zostaje widoczna (wyszarzona/kursywa), ale nie liczy sie do sum. */
 .expense-cell.is-excluded .exp-amount {
@@ -516,8 +523,15 @@ button.btn.faded:hover {
    rozciagala sie na cala (odkorkowana) szerokosc main.wide. */
 .fees-table { width: auto; }
 .fees-table th.fee-amount, .fees-table td.fee-amount { width: 100px; }
+.fees-table .fee-amount input { width: 90px; }
 .fees-table th.fee-paid, .fees-table td.fee-paid { width: 90px; text-align: center; }
 .fees-table th.fee-action, .fees-table td.fee-action { width: 90px; }
+
+/* Niezaplacona oplata (kwota > 0, checkbox odznaczony) ma sie rzucac w
+   oczy - widac od razu co jeszcze trzeba uregulowac w danym miesiacu. */
+.fees-table td.unpaid-fee {
+  background: var(--danger-soft);
+}
 
 #toast-container {
   position: fixed;
